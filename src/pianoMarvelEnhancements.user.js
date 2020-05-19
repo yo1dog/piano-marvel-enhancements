@@ -140,7 +140,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
       <button class="yo1dog-pme-refreshInputs">Refresh</button><br>
       <br>
       <select class="yo1dog-pme-shortcuts"></select> <code class="yo1dog-pme-shortcutNotes"></code><br>
-      <button class="yo1dog-pme-recordToggle">Record</button><br>
+      <button class="yo1dog-pme-recordToggle">${getRecordButtonInnerHTML(false)}</button><br>
       <br>
       <code class="yo1dog-pme-noteBuffer"></code><br>
       <div class="yo1dog-pme-messages"></div>
@@ -310,7 +310,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
     if (curRecordingLength === null) {
       startRecording();
       
-      recordToggleButton.innerHTML = '&#x23f9; Stop';
+      recordToggleButton.innerHTML = getRecordButtonInnerHTML(true);
       shortcutsElem.disabled = true;
       showShortcutNotes([]);
     }
@@ -325,10 +325,14 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
       showMessage(`Updated ${shortcut.name} shortcut`);
       saveSettingsBackground();
       
-      recordToggleButton.innerHTML = '&#x23fa; Record';
+      recordToggleButton.innerHTML = getRecordButtonInnerHTML(false);
       shortcutsElem.disabled = false;
       showShortcut(shortcut);
     }
+  }
+  /** @param {boolean} isRecording */
+  function getRecordButtonInnerHTML(isRecording) {
+    return isRecording? '&#x23f9; Stop' : '&#x23fa; Record';
   }
   
   /** @param {IMidiInput | null} midiInput  */
