@@ -96,6 +96,9 @@ async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
   /** @type {import('../lib/webmidi').Input | null} */
   let curMidiInput = null;
   
+  /** @type {string | null} */
+  let preferredMidiInputName = null;
+  
   /** @type {INoteEvent[]} */
   const noteEventBuffer = [];
   
@@ -115,7 +118,7 @@ async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
   const db = await setupDB();
   try {
     logger.log('Loading settings...');
-    await loadSettings(db);
+    await loadSettings();
   } catch(err) {
     logger.error(`Error loading settings.`, err);
   }
@@ -185,8 +188,26 @@ async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
       inputsElem.options.add(optElem);
     }
     
-    inputsElem.addEventListener('change', () => setMidiInput(getSelectedMidiInput()));
-    setMidiInput(getSelectedMidiInput());
+    if (preferredMidiInputName) {
+      const preferredMidiInput = webmidi.inputs.find(x => x.name === preferredMidiInputName);
+      if (preferredMidiInput) {
+        inputsElem.value = preferredMidiInput.id;
+      }
+    }
+    
+    inputsElem.addEventListener('change', () => {
+      const midiInput = getSelectedMidiInput();
+      if (!midiInput) return;
+      
+      preferredMidiInputName = midiInput.name;
+      saveSettingsBackground();
+      setMidiInput(midiInput);
+    });
+    
+    const midiInput = getSelectedMidiInput();
+    if (midiInput) {
+      setMidiInput(midiInput);
+    }
   });
   
   function getSelectedShortcut() {
@@ -199,6 +220,8 @@ async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
   
   function getSelectedMidiInput() {
     const selectedMidiInputId = inputsElem.value;
+    if (!selectedMidiInputId) return null;
+    
     const midiInput = webmidi.inputs.find(x => x.id === selectedMidiInputId);
     if (!midiInput) throw new Error(`MIDI input with ID '${selectedMidiInputId}' does not exists.`);
     
@@ -250,7 +273,7 @@ async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
       const shortcut = getSelectedShortcut();
       shortcut.notes = recordedNotes;
       showMessage(`Updated ${shortcut.name} shortcut`);
-      saveSettingsBackground(db);
+      saveSettingsBackground();
       
       recordToggleButton.innerText = 'Record';
       shortcutsElem.disabled = false;
@@ -297,58 +320,63 @@ async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
   /** @returns {Promise<IDBDatabase>} */
   async function setupDB() {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open('yo1dog-pme', 1);
+      const request = indexedDB.open('yo1dog-pme', 2);
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
       request.onupgradeneeded = () => {
         const db = request.result;
-        db.createObjectStore('shortcuts', {keyPath: 'name'});
+        db.createObjectStore('settings');
       };
     });
   }
   
-  /** @param {IDBDatabase} db */
-  async function saveSettings(db) {
+  async function saveSettings() {
     return new Promise((resolve, reject) => {
+      logger.log('Saving settings...');
       // NOTE: can't use local storage because Piano Marvel clears it
-      const transaction = db.transaction(['shortcuts'], 'readwrite');
-      transaction.onerror = () => reject(transaction.error);
-      transaction.oncomplete = () => resolve();
+      const objectStore = db.transaction(['settings'], 'readwrite').objectStore('settings');
       
-      const objectStore = transaction.objectStore('shortcuts');
-      
-      for (const shortcut of shortcuts) {
-        const shortcutSetting = {
+      const settings = {
+        shortcuts: shortcuts.map(shortcut => ({
           name: shortcut.name,
           notes: shortcut.notes
-        };
-        objectStore.put(shortcutSetting);
-      }
+        })),
+        preferredMidiInputName
+      };
+      const request = objectStore.put(settings, 'primary');
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        logger.log('Saved settings.');
+        return resolve();
+      };
     });
   }
-  /** @param {IDBDatabase} db */
-  function saveSettingsBackground(db) {
-    saveSettings(db)
+  function saveSettingsBackground() {
+    saveSettings()
     .catch(err => logger.error(`Error saving settings.`, err));
   }
   
-  /** @param {IDBDatabase} db */
-  function loadSettings(db) {
+  function loadSettings() {
     return new Promise((resolve, reject) => {
-      const request = (
-        db
-        .transaction(['shortcuts'])
-        .objectStore('shortcuts')
-        .getAll()
-      );
+      const objectStore = db.transaction(['settings']).objectStore('settings');
+      
+      const request = objectStore.get('primary');
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        const shortcutSettings = request.result;
-        
-        for (const shortcut of shortcuts) {
-          const shortcutSetting = shortcutSettings.find(x => x.name === shortcut.name);
-          if (shortcutSetting && shortcutSetting.notes && shortcutSetting.notes.length > 0) {
-            shortcut.notes = shortcutSetting.notes;
+        const settings = request.result;
+        if (settings) {
+          const shortcutSettings = settings.shortcuts;
+          if (Array.isArray(shortcutSettings)) {
+            for (const shortcut of shortcuts) {
+              const shortcutSetting = shortcutSettings.find(x => x.name === shortcut.name);
+              if (shortcutSetting && shortcutSetting.notes && shortcutSetting.notes.length > 0) {
+                shortcut.notes = shortcutSetting.notes;
+              }
+            }
+          }
+          
+          if (settings.preferredMidiInputName) {
+            preferredMidiInputName = settings.preferredMidiInputName;
           }
         }
         
