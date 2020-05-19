@@ -9,7 +9,7 @@
 // @match         *://pianomarvel.com/nextgen/*
 // @run-at        document-end
 // @resource      jzzResource ../lib/JZZ.js?v=1
-// @resource      styleResource style.css?v=2
+// @resource      styleResource style.css?v=7
 // @grant         GM.getResourceURL
 // @grant         GM.getResourceUrl
 // ==/UserScript==
@@ -47,6 +47,10 @@
  * @typedef IMidiInputConnection
  * @property {IMidiInput} input
  * @property {import('../lib/JZZ').Port} port
+ * 
+ * @typedef IMessage
+ * @property {string} text
+ * @property {boolean} isError
  */
 
 let __execIdSeq = 0; // eslint-disable-line @typescript-eslint/naming-convention
@@ -67,7 +71,8 @@ console.log('yo1dog-pme: Piano Marvel Enhancements loaded');
 async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   const SHORTCUT_MAX_LENGTH = 5;
   const SHORTCUT_MAX_DUR_MS = 5000;
-  const BUFFER_MAX_LENGTH = SHORTCUT_MAX_LENGTH;
+  const NOTE_BUFFER_MAX_LENGTH = SHORTCUT_MAX_LENGTH;
+  const MESSAGE_BUFFER_MAX_LENGTH = 20;
   
   const logger = {
     /** @param {any} message @param {any[]} optionalParams */
@@ -100,20 +105,12 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   styleLinkElem.href = styleUrl;
   headElem.appendChild(styleLinkElem);
   
-  /** @type {import('../lib/JZZ')} */
-  const JZZ = /** @type {any} */(window).JZZ;
-  
-  /** @type {IMidiInputConnection | null} */
-  let curMidiConnection = null;
-  
-  /** @type {string | null} */
-  let preferredMidiInputName = null;
-  
-  /** @type {INoteEvent[]} */
-  const noteEventBuffer = [];
-  
-  /** @type {number | null} */
-  let curRecordingLength = null;
+  /** @type {import('../lib/JZZ')}        */ const JZZ                    = /** @type {any} */(window).JZZ;
+  /** @type {IMidiInputConnection | null} */ let   curMidiConnection      = null;
+  /** @type {string | null}               */ let   preferredMidiInputName = null;
+  /** @type {INoteEvent[]}                */ const noteEventBuffer        = [];
+  /** @type {number | null}               */ let   curRecordingLength     = null;
+  /** @type {IMessage[]}                  */ const messageBuffer          = [];
   
   /** @type {IShortcut[]} */
   const shortcuts = [
@@ -144,7 +141,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
       <button class="yo1dog-pme-recordToggle">Record</button><br>
       <br>
       <code class="yo1dog-pme-noteBuffer"></code><br>
-      <span class="yo1dog-pme-message"></span>
+      <div class="yo1dog-pme-messages"></div>
     </div>
   `;
   
@@ -155,7 +152,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   const shortcutNotesElem   = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-shortcutNotes');
   const recordToggleButton  = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-recordToggle');
   const noteBufferElem      = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-noteBuffer');
-  const messageElem         = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-message');
+  const messagesElem        = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-messages');
   
   // the menu element is destroyed and recreated so we must watch and reattach
   const observer = new MutationObserver(() => {
@@ -188,7 +185,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   try {
     jzz = await JZZ();
   } catch(err) {
-    showMessage(`Failed to start MIDI engine.`);
+    showErrorMessage(`Failed to start MIDI engine.`);
     logger.error(err);
     return;
   }
@@ -311,7 +308,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
     if (curRecordingLength === null) {
       startRecording();
       
-      recordToggleButton.innerText = 'Stop';
+      recordToggleButton.innerHTML = '&#x23f9; Stop';
       shortcutsElem.disabled = true;
       showShortcutNotes([]);
     }
@@ -326,7 +323,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
       showMessage(`Updated ${shortcut.name} shortcut`);
       saveSettingsBackground();
       
-      recordToggleButton.innerText = 'Record';
+      recordToggleButton.innerHTML = '&#x23fa; Record';
       shortcutsElem.disabled = false;
       showShortcut(shortcut);
     }
@@ -379,10 +376,40 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
     return noteEventBuffer.slice(-Math.min(curRecordingLength, maxLength)).map(x => x.note);
   }
   
-  /** @param {string} msg */
-  function showMessage(msg) {
-    logger.log(msg);
-    messageElem.innerText = msg;
+  /**
+   * @param {string} text
+   * @param {boolean} [isError]
+   */
+  function showMessage(text, isError) {
+    if (isError) logger.error(text);
+    else logger.log(text);
+    
+    messageBuffer.push({
+      text,
+      isError: isError || false
+    });
+    if (messageBuffer.length > MESSAGE_BUFFER_MAX_LENGTH) {
+      messageBuffer.splice(0, messageBuffer.length - MESSAGE_BUFFER_MAX_LENGTH);
+    }
+    
+    while (messagesElem.firstChild) {
+      messagesElem.removeChild(messagesElem.firstChild);
+    }
+    
+    for (const message of messageBuffer) {
+      const divElem = document.createElement('div');
+      divElem.innerText = message.text;
+      if (message.isError) {
+        divElem.classList.add('yo1dog-pme-error');
+      }
+      messagesElem.appendChild(divElem);
+    }
+    
+    messagesElem.scrollTop = messagesElem.scrollHeight;
+  }
+  /** @param {string} text */
+  function showErrorMessage(text) {
+    showMessage(text, true);
   }
   
   /** @returns {Promise<IDBDatabase>} */
@@ -465,8 +492,8 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
       timestampMs: Date.now(), // JZZ current does not support timestamps
       note: createNote(msg.getNote())
     });
-    if (noteEventBuffer.length > BUFFER_MAX_LENGTH) {
-      noteEventBuffer.splice(0, noteEventBuffer.length - BUFFER_MAX_LENGTH);
+    if (noteEventBuffer.length > NOTE_BUFFER_MAX_LENGTH) {
+      noteEventBuffer.splice(0, noteEventBuffer.length - NOTE_BUFFER_MAX_LENGTH);
     }
     
     showNoteBuffer();
@@ -518,7 +545,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
       shortcut.exec();
     }
     catch(err) {
-      showMessage(`Failed to execute ${shortcut.name} shortcut: ${err.message}`);
+      showErrorMessage(`Failed to execute ${shortcut.name} shortcut: ${err.message}`);
       logger.error(err);
     }
   }
