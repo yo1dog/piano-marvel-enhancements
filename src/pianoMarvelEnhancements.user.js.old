@@ -1,0 +1,595 @@
+// ==UserScript==
+// @name          Piano Marvel Enhancements
+// @namespace     http://yo1.dog
+// @version       1.0.0
+// @description   Adds enhancements to painomarvel.com
+// @author        Mike "yo1dog" Moore
+// @homepageURL   https://github.com/yo1dog/piano-marvel-enhancements#readme
+// #@icon          https://github.com/yo1dog/piano-marvel-enhancements/raw/master/icon.ico
+// @match         *://pianomarvel.com/nextgen/*
+// @run-at        document-end
+// @resource      webmidiResource http://localhost:8080/lib/webmidi.min.js
+// @resource      styleResource http://localhost:8080/src/style.css
+// @grant         GM.getResourceURL
+// @grant         GM.getResourceUrl
+// ==/UserScript==
+
+/**
+ * @typedef INote
+ * @property {string} name
+ * @property {number} octave
+ * @property {number} number
+ * 
+ * @typedef INoteEvent
+ * @property {INote} note
+ * @property {number} timestampMs
+ * 
+ * @typedef IShortcut
+ * @property {string} name
+ * @property {INote[]} [notes]
+ * @property {(execState: IShortcutExecState) => Promise<void>} exec
+ * 
+ * @typedef IShortcutExecState
+ * @property {IShortcut} shortcut
+ * @property {boolean} [stopped]
+ * @property {IAppState} appState
+ * 
+ * @typedef IAppState
+ * @property {HTMLElement} controlsContainer
+ * @property {HTMLElement} backButton
+ * @property {HTMLElement} nextButton
+ * @property {HTMLElement} prepareButton
+ * @property {HTMLElement} assessButton
+ * @property {boolean} backButtonIsEnabled
+ * @property {boolean} nextButtonIsEnabled
+ * @property {boolean} prepareButtonIsEnabled
+ * @property {boolean} assessButtonIsEnabled
+ * @property {boolean} isPreparing
+ * @property {boolean} isAssessing
+ */
+
+let __execIdSeq = 0; // eslint-disable-line @typescript-eslint/naming-convention
+
+console.log('Piano Marvel Enhancements loaded');
+
+(async () => {
+  const webmidiUrl = await (GM.getResourceUrl || GM.getResourceURL)('webmidiResource');
+  const styleUrl   = await (GM.getResourceUrl || GM.getResourceURL)('styleResource');
+  await execOnPage(window, pianoMarvelEnhancements, {webmidiUrl, styleUrl});
+})().catch(err => console.error(err));
+
+/**
+ * @param {object} options 
+ * @param {string} options.webmidiUrl 
+ * @param {string} options.styleUrl 
+ */
+async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
+  const SHORTCUT_MAX_LENGTH = 5;
+  const SHORTCUT_MAX_DUR_MS = 5000;
+  const SHORTCUT_EXEC_TIMEOUT_MS = 5000;
+  const BUFFER_MAX_LENGTH = SHORTCUT_MAX_LENGTH;
+  
+  
+  console.log('Piano Marvel Enhancements started');
+  
+  const headElem = document.getElementsByTagName('head')[0];
+  
+  console.log('Injecting');
+  const webmidiScriptElem = document.createElement('script');
+  webmidiScriptElem.src = webmidiUrl;
+  headElem.appendChild(webmidiScriptElem);
+  if (!/** @type {any} */(window).WebMidi) {
+    await new Promise(resolve => webmidiScriptElem.addEventListener('load', () => resolve()));
+  }
+  
+  const styleLinkElem = document.createElement('link');
+  styleLinkElem.rel = 'stylesheet';
+  styleLinkElem.type = 'text/css';
+  styleLinkElem.href = styleUrl;
+  headElem.appendChild(styleLinkElem);
+  
+  /** @type {import('../lib/webmidi').WebMidi} */
+  const webmidi = /** @type {any} */(window).WebMidi;
+  
+  /** @type {import('../lib/webmidi').Input | null} */
+  let curMidiInput = null;
+  
+  /** @type {INoteEvent[]} */
+  const noteEventBuffer = [];
+  
+  /** @type {number | null} */
+  let curRecordingLength = null;
+  
+  /** @type {IShortcutExecState | null} */
+  let curShortcutExecState = null;
+  
+  /** @type {IShortcut[]} */
+  const shortcuts = [
+    {name: 'Back',    exec: doBack   },
+    {name: 'Next',    exec: doNext   },
+    {name: 'Prepare', exec: doPrepare},
+    {name: 'Assess',  exec: doAssess },
+  ];
+  
+  const appContainer = document.body;
+  if (!appContainer) throw new Error(`Unable to find app container.`);
+  appContainer.classList.add('yo1dog-pme-host');
+  
+  const template = document.createElement('template');
+  template.innerHTML = `
+    <div class="yo1dog-pme-container">
+      <select class="yo1dog-pme-inputs"></select><br>
+      <br>
+      <select class="yo1dog-pme-shortcuts"></select> <code class="yo1dog-pme-shortcutNotes"></code><br>
+      <button class="yo1dog-pme-recordToggle">Record</button><br>
+      <br>
+      <code class="yo1dog-pme-noteBuffer"></code><br>
+      <span class="yo1dog-pme-message"></span>
+    </div>
+  `;
+  
+  appContainer.appendChild(template.content);
+  
+  const pmeContainer = requireQuerySelector(appContainer, '.yo1dog-pme-container');
+  const inputsElem = requireQuerySelectorTag(pmeContainer, '.yo1dog-pme-inputs', 'select');
+  const shortcutsElem = requireQuerySelectorTag(pmeContainer, '.yo1dog-pme-shortcuts', 'select');
+  const shortcutNotesElem = requireQuerySelector(pmeContainer, '.yo1dog-pme-shortcutNotes');
+  const recordToggleButton = requireQuerySelector(pmeContainer, '.yo1dog-pme-recordToggle');
+  const noteBufferElem = requireQuerySelector(pmeContainer, '.yo1dog-pme-noteBuffer');
+  const messageElem = requireQuerySelector(pmeContainer, '.yo1dog-pme-message');
+  
+  for (const shortcut of shortcuts) {
+    const optElem = document.createElement('option');
+    optElem.text = shortcut.name;
+    optElem.value = shortcut.name;
+    shortcutsElem.options.add(optElem);
+  }
+  
+  shortcutsElem.addEventListener('change', () => showShortcut(getSelectedShortcut()));
+  recordToggleButton.addEventListener('click', () => toggleRecording());
+  
+  
+  showShortcut(getSelectedShortcut());
+  showNoteBuffer();
+  
+  webmidi.enable(err => {
+    if (err) {
+      showMessage(`WebMidi could not be enabled.`);
+      console.error(err);
+      return;
+    }
+    
+    for (const midiInput of webmidi.inputs) {
+      const optElem = document.createElement('option');
+      optElem.text = midiInput.name;
+      optElem.value = midiInput.id;
+      inputsElem.options.add(optElem);
+    }
+    
+    inputsElem.addEventListener('change', () => setMidiInput(getSelectedMidiInput()));
+    setMidiInput(getSelectedMidiInput());
+  });
+  
+  function getSelectedShortcut() {
+    const selectedShortcutName = shortcutsElem.value;
+    const shortcut = shortcuts.find(x => x.name === selectedShortcutName);
+    if (!shortcut) throw new Error(`Shortcut with name '${selectedShortcutName}' does not exists.`);
+    
+    return shortcut;
+  }
+  
+  function getSelectedMidiInput() {
+    const selectedMidiInputId = inputsElem.value;
+    const midiInput = webmidi.inputs.find(x => x.id === selectedMidiInputId);
+    if (!midiInput) throw new Error(`MIDI input with ID '${selectedMidiInputId}' does not exists.`);
+    
+    return midiInput;
+  }
+  
+  /** @param {IShortcut} shortcut */
+  function showShortcut(shortcut) {
+    if (!shortcut.notes || shortcut.notes.length === 0) {
+      shortcutNotesElem.innerText = 'not set';
+    }
+    else {
+      showShortcutNotes(shortcut.notes);
+    }
+  }
+  
+  /** @param {INote[]} notes */
+  function showShortcutNotes(notes) {
+    shortcutNotesElem.innerText = notesToString(notes);
+  }
+  
+  function showNoteBuffer() {
+    noteBufferElem.innerText = notesToString(noteEventBuffer.map(x => x.note));
+  }
+  
+  /** @param {INote[]} notes */
+  function notesToString(notes) {
+    return (
+      notes.length === 0
+      ? '--'
+      : notes.map(note => `${note.name}${note.octave}`).join(', ')
+    );
+  }
+
+  function toggleRecording() {
+    if (curRecordingLength === null) {
+      startRecording();
+      
+      recordToggleButton.innerText = 'Stop';
+      shortcutsElem.disabled = true;
+      showShortcutNotes([]);
+    }
+    else {
+      const recordedNotes = getRecording(SHORTCUT_MAX_LENGTH);
+      stopRecording();
+      
+      const shortcut = getSelectedShortcut();
+      shortcut.notes = recordedNotes;
+      showMessage(`Updated ${shortcut.name} shortcut notes`);
+      
+      recordToggleButton.innerText = 'Record';
+      shortcutsElem.disabled = false;
+      showShortcut(shortcut);
+    }
+  }
+  
+  /**
+   * @param {import('../lib/webmidi').Input} midiInput 
+   */
+  function setMidiInput(midiInput) {
+    if (curMidiInput) {
+      // remove all listeners from old input
+      curMidiInput.removeListener();
+      showMessage(`Stopped listening to MIDI input '${curMidiInput.name}' (${curMidiInput.id})`);
+    }
+    
+    curMidiInput = midiInput;
+    midiInput.addListener('noteon', 'all', event => onNote(event));
+    showMessage(`Listening to MIDI input '${midiInput.name}' (${midiInput.id})`);
+  }
+  
+  function startRecording() {
+    showMessage(`Recording started.`);
+    curRecordingLength = 0;
+  }
+  function stopRecording() {
+    showMessage(`Recording stoped.`);
+    curRecordingLength = null;
+  }
+  /** @param {number} maxLength */
+  function getRecording(maxLength) {
+    if (curRecordingLength === null) throw new Error(`Not recording.`);
+    if (curRecordingLength === 0) return [];
+    return noteEventBuffer.slice(-Math.min(curRecordingLength, maxLength)).map(x => x.note);
+  }
+  
+  /** @param {string} msg */
+  function showMessage(msg) {
+    console.log(msg);
+    messageElem.innerText = msg;
+  }
+
+  /** @param {import('../lib/webmidi').InputEventNoteon} event */
+  function onNote(event) {
+    noteEventBuffer.push({
+      timestampMs: event.timestamp,
+      note: event.note
+    });
+    if (noteEventBuffer.length > BUFFER_MAX_LENGTH) {
+      noteEventBuffer.splice(0, noteEventBuffer.length - BUFFER_MAX_LENGTH);
+    }
+    
+    showNoteBuffer();
+    
+    if (curRecordingLength !== null) {
+      ++curRecordingLength;
+      showShortcutNotes(getRecording(SHORTCUT_MAX_LENGTH));
+      return;
+    }
+    
+    for (const shortcut of shortcuts) {
+      if (!shortcut.notes || shortcut.notes.length === 0) {
+        continue;
+      }
+      
+      const offset = noteEventBuffer.length - shortcut.notes.length;
+      if (offset < 0) {
+        continue;
+      }
+      
+      const shortcutDurMs = noteEventBuffer[noteEventBuffer.length - 1].timestampMs - noteEventBuffer[offset].timestampMs;
+      if (shortcutDurMs > SHORTCUT_MAX_DUR_MS) {
+        continue;
+      }
+      
+      let didMatch = true;
+      for (let i = 0; i < shortcut.notes.length; ++i) {
+        if (noteEventBuffer[offset + i].note.number !== shortcut.notes[i].number) {
+          didMatch = false;
+          break;
+        }
+      }
+      
+      if (didMatch) {
+        managedExecShortcut(shortcut);
+        break;
+      }
+    }
+  }
+  
+  /** @param {IShortcut} shortcut */
+  function managedExecShortcut(shortcut) {
+    if (curShortcutExecState) {
+      showMessage(`Stopping ${curShortcutExecState.shortcut.name} shortcut.`);
+      curShortcutExecState.stopped = true;
+    }
+    
+    showMessage(`Executing ${shortcut.name} shortcut...`);
+    curShortcutExecState = {
+      shortcut,
+      appState: getAppState()
+    };
+    (async () => {
+      try {
+        await execShortcut(curShortcutExecState);
+        showMessage(`Done executing ${shortcut.name} shortcut.`);
+      }
+      catch(err) {
+        showMessage(`Failed to execute ${shortcut.name} shortcut: ${err.message}`);
+        console.error(err);
+      }
+      finally {
+        curShortcutExecState = null;
+      }
+    })()
+    .catch(err => console.error(err));
+  }
+  
+  /** @param {IShortcutExecState} execState */
+  async function execShortcut(execState) {
+    try {
+      await Promise.race([
+        execState.shortcut.exec(execState),
+        wait(execState, SHORTCUT_EXEC_TIMEOUT_MS).then(() => Promise.reject(new Error(`Timeout after ${SHORTCUT_EXEC_TIMEOUT_MS}ms.`)))
+      ]);
+    }
+    finally {
+      execState.stopped = true;
+    }
+  }
+  
+  /** @param {IShortcutExecState} execState */
+  async function doStop(execState) {
+    if (execState.appState.isPreparing) {
+      showMessage('Stopping prepare...');
+      execState.appState.prepareButton.click();
+      execState = await waitForAppStateKey(execState, 'prepareButtonIsEnabled', false);
+      execState = await waitForAppStateKey(execState, 'prepareButtonIsEnabled');
+      execState = await waitForAppStateKey(execState, 'isPreparing', false);
+      await wait(execState, 300);
+    }
+    if (execState.appState.isAssessing) {
+      showMessage('Stopping assess...');
+      execState.appState.assessButton.click();
+      execState = await waitForAppStateKey(execState, 'assessButtonIsEnabled', false);
+      execState = await waitForAppStateKey(execState, 'assessButtonIsEnabled');
+      execState = await waitForAppStateKey(execState, 'isAssessing', false);
+      await wait(execState, 300);
+    }
+    return execState;
+  }
+  
+  /** @param {IShortcutExecState} execState */
+  async function doBack(execState) {
+    execState = await doStop(execState);
+    showMessage('Going back...');
+    execState.appState.backButton.click();
+    execState = await waitForAppStateKey(execState, 'prepareButtonIsEnabled', false);
+    execState = await waitForAppStateKey(execState, 'prepareButtonIsEnabled');
+    await wait(execState, 100);
+  }
+  
+  /** @param {IShortcutExecState} execState */
+  async function doNext(execState) {
+    execState = await doStop(execState);
+    showMessage('Going next...');
+    execState.appState.nextButton.click();
+    execState = await waitForAppStateKey(execState, 'prepareButtonIsEnabled', false);
+    execState = await waitForAppStateKey(execState, 'prepareButtonIsEnabled');
+    await wait(execState, 100);
+  }
+  
+  /** @param {IShortcutExecState} execState */
+  async function doPrepare(execState) {
+    execState = await doStop(execState);
+    showMessage('Starting prepare...');
+    execState.appState.prepareButton.click();
+    execState = await waitForAppStateKey(execState, 'isPreparing');
+    await wait(execState, 100);
+  }
+  
+  /** @param {IShortcutExecState} execState */
+  async function doAssess(execState) {
+    execState = await doStop(execState);
+    showMessage('Starting assess...');
+    execState.appState.assessButton.click();
+    execState = await waitForAppStateKey(execState, 'isAssessing');
+    await wait(execState, 100);
+  }
+  
+  /** @returns {IAppState} */
+  function getAppState() {
+    const controlsContainer = document.getElementById('playerControlContainer');
+    if (!controlsContainer) throw new Error(`Unable to find player control container.`);
+    
+    /** @type {HTMLElement[]} */
+    const controlButtons = Array.from(controlsContainer.querySelectorAll('.btn-control'));
+    /** @type {HTMLElement[]} */
+    const playButtons = Array.from(controlsContainer.querySelectorAll('.btn-play'));
+    
+    const backButton = controlButtons.find(x => x.querySelector('.fa-backward'));
+    if (!backButton) throw new Error(`Unable to find back button.`);
+    const nextButton = controlButtons.find(x => x.querySelector('.fa-forward'));
+    if (!nextButton) throw new Error(`Unable to find next button.`);
+    const prepareButton = playButtons.find(x => x.innerText.toLowerCase() === 'prepare');
+    if (!prepareButton) throw new Error(`Unable to find prepare button.`);
+    const assessButton = playButtons.find(x => x.innerText.toLowerCase() === 'assess');
+    if (!assessButton) throw new Error(`Unable to find assess button.`);
+    
+    return {
+      controlsContainer,
+      backButton,
+      nextButton,
+      prepareButton,
+      assessButton,
+      backButtonIsEnabled: !backButton.classList.contains('disabled'),
+      nextButtonIsEnabled: !nextButton.classList.contains('disabled'),
+      prepareButtonIsEnabled: !prepareButton.classList.contains('disabled'),
+      assessButtonIsEnabled: !assessButton.classList.contains('disabled'),
+      isPreparing: prepareButton.querySelector('.fa-square')? true : false,
+      isAssessing: assessButton.querySelector('.fa-square')? true : false,
+    };
+  }
+  
+  /**
+   * @template {keyof IAppState} T
+   * @param {IShortcutExecState} execState 
+   * @param {T} key 
+   * @param {IAppState[T]} [val] 
+   * @returns {Promise<IShortcutExecState>}
+   */
+  async function waitForAppStateKey(execState, key, val) {
+    console.log(`Waiting for ${key} to be ${val === undefined? 'truethy' : val}...`);
+    return await waitForAppState(execState, appState => (
+      val === undefined? (appState[key]? true : false) : appState[key] === val
+    ));
+  }
+  
+  /**
+   * @param {IShortcutExecState} execState 
+   * @param {(appState: IAppState) => boolean} testFn 
+   * @returns {Promise<IShortcutExecState>}
+   */
+  async function waitForAppState(execState, testFn) {
+    if (testFn(execState.appState)) {
+      return execState;
+    }
+    
+    return new Promise((resolve, reject) => {
+      const observer = new MutationObserver(() => {
+        if (execState.stopped) {
+          observer.disconnect();
+          return reject(new Error(`Execution stopped.`));
+        }
+        
+        try {
+          execState.appState = getAppState();
+        } catch (err) {
+          return;
+        }
+        
+        if (testFn(execState.appState)) {
+          observer.disconnect();
+          return resolve(execState);
+        }
+      });
+      
+      observer.observe(execState.appState.controlsContainer, {
+        subtree: true,
+        attributes: true
+      });
+    });
+  }
+  
+  /**
+   * @param {IShortcutExecState} execState
+   * @param {number} ms
+   */
+  async function wait(execState, ms) {
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        if (execState.stopped) return reject(new Error(`Execution stopped.`));
+        return resolve();
+      }, ms);
+    });
+  }
+  
+  /**
+   * @param {HTMLElement} parent 
+   * @param {string} selectors 
+   * @returns {HTMLElement}
+   */
+  function requireQuerySelector(parent, selectors) {
+    const elem = parent.querySelector(selectors);
+    if (!elem) throw new Error(`Unable to find ${selectors}`);
+    return /** @type {any} */(elem);
+  }
+  
+  /**
+   * @template {keyof HTMLElementTagNameMap} T
+   * @param {HTMLElement} parent 
+   * @param {string} selectors 
+   * @param {T} tagName 
+   * @returns {HTMLElementTagNameMap[T]}
+   */
+  function requireQuerySelectorTag(parent, selectors, tagName) {
+    const elem = requireQuerySelector(parent, selectors);
+    if (elem.tagName.toUpperCase() !== tagName.toUpperCase()) throw new Error(`Found ${selectors} but it is a ${elem.tagName} and not ${tagName}`);
+    return /** @type {any} */(elem);
+  }
+}
+
+
+
+
+
+
+/**
+ * @param {Window} window 
+ * @param {(param?: any) => void | Promise<void>} fn 
+ * @param {any} [jsonParam] 
+ */
+async function execOnPage(window, fn, jsonParam) {
+  const execId = __execIdSeq++;
+  const eventName = 'exec-on-page-complete';
+  
+  const script = window.document.createElement('script');
+  script.setAttribute('async', '');
+  script.textContent = `
+    (async () =>
+      await (${fn})(${JSON.stringify(jsonParam)})
+    )()
+    .then (result => document.dispatchEvent(new CustomEvent(${JSON.stringify(eventName)}, {detail: {id: ${JSON.stringify(execId)}, result}})))
+    .catch(error  => document.dispatchEvent(new CustomEvent(${JSON.stringify(eventName)}, {detail: {id: ${JSON.stringify(execId)}, error }})))
+  `;
+  
+  const result = await new Promise((resolve, reject) => {
+    /** @type {EventListener} */
+    const eventListener = event => {
+      if (
+        !(event instanceof CustomEvent) ||
+        !event.detail ||
+        event.detail.id !== execId
+      ) {
+        return;
+      }
+      
+      window.document.removeEventListener(eventName, eventListener);
+      
+      if (event.detail.error) {
+        reject(event.detail.error);
+        return;
+      }
+      resolve(event.detail.result);
+    };
+    
+    window.document.addEventListener(eventName, eventListener);
+    window.document.body.appendChild(script);
+  });
+  
+  //window.document.body.removeChild(script);
+  return result;
+}

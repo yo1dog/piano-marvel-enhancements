@@ -1,0 +1,10 @@
+.yo1dog-pme-container {
+  width: 210pt;
+  padding: 5pt;
+  border: 1px solid black;
+  background-color: white;
+  text-transform: none;
+}
+.yo1dog-pme-header {
+  text-align: center;
+}

@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "maxNodeModuleJsDepth": 0,
+    "checkJs": true,
+    "alwaysStrict": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "module": "esnext",
+    "target": "esnext",
+    "lib": ["esnext", "dom"]
+  },
+  "exclude": [
+    "node_modules",
+    "lib"
+  ]
+}
