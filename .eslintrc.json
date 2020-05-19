@@ -141,9 +141,9 @@
         "selector": "property",
         "format": null
       }
-    ]
+    ],
     
     // --- Project Specific ---
-    
+    "new-cap": ["error", {"capIsNewExceptions": ["JZZ"]}]
   }
 }

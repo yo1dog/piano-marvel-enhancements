@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name          Piano Marvel Enhancements
 // @namespace     http://yo1.dog
-// @version       1.0.0
+// @version       2.0.0
 // @description   Adds enhancements to painomarvel.com
 // @author        Mike "yo1dog" Moore
 // @homepageURL   https://github.com/yo1dog/piano-marvel-enhancements#readme
 // @icon          https://github.com/yo1dog/piano-marvel-enhancements/raw/master/icon.ico
 // @match         *://pianomarvel.com/nextgen/*
 // @run-at        document-end
-// @resource      webmidiResource ../lib/webmidi.min.js?v=1
+// @resource      jzzResource ../lib/JZZ.js?v=1
 // @resource      styleResource style.css?v=2
 // @grant         GM.getResourceURL
 // @grant         GM.getResourceUrl
@@ -37,6 +37,16 @@
  * @property {HTMLElement} assessButton
  * @property {boolean} isPreparing
  * @property {boolean} isAssessing
+ * 
+ * @typedef IMidiInput
+ * @property {string} name
+ * @property {string} manufacturer
+ * @property {string} version
+ * @property {string} engine
+ * 
+ * @typedef IMidiInputConnection
+ * @property {IMidiInput} input
+ * @property {import('../lib/JZZ').Port} port
  */
 
 let __execIdSeq = 0; // eslint-disable-line @typescript-eslint/naming-convention
@@ -44,17 +54,17 @@ let __execIdSeq = 0; // eslint-disable-line @typescript-eslint/naming-convention
 console.log('yo1dog-pme: Piano Marvel Enhancements loaded');
 
 (async () => {
-  const webmidiUrl = await (GM.getResourceUrl || GM.getResourceURL)('webmidiResource');
-  const styleUrl   = await (GM.getResourceUrl || GM.getResourceURL)('styleResource');
-  await execOnPage(window, pianoMarvelEnhancements, {webmidiUrl, styleUrl});
+  const jzzUrl   = await (GM.getResourceUrl || GM.getResourceURL)('jzzResource');
+  const styleUrl = await (GM.getResourceUrl || GM.getResourceURL)('styleResource');
+  await execOnPage(window, pianoMarvelEnhancements, {jzzUrl, styleUrl});
 })().catch(err => console.error('yo1dog-pme:', err));
 
 /**
  * @param {object} options 
- * @param {string} options.webmidiUrl 
+ * @param {string} options.jzzUrl 
  * @param {string} options.styleUrl 
  */
-async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
+async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   const SHORTCUT_MAX_LENGTH = 5;
   const SHORTCUT_MAX_DUR_MS = 5000;
   const BUFFER_MAX_LENGTH = SHORTCUT_MAX_LENGTH;
@@ -75,12 +85,12 @@ async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
   
   const headElem = document.getElementsByTagName('head')[0];
   
-  logger.log('Injecting webmidi...');
-  const webmidiScriptElem = document.createElement('script');
-  webmidiScriptElem.src = webmidiUrl;
-  headElem.appendChild(webmidiScriptElem);
-  if (!/** @type {any} */(window).WebMidi) {
-    await new Promise(resolve => webmidiScriptElem.addEventListener('load', () => resolve()));
+  logger.log('Injecting JZZ...');
+  const jzzScriptElem = document.createElement('script');
+  jzzScriptElem.src = jzzUrl;
+  headElem.appendChild(jzzScriptElem);
+  if (!/** @type {any} */(window).JZZ) {
+    await new Promise(resolve => jzzScriptElem.addEventListener('load', () => resolve()));
   }
   
   logger.log('Injecting style...');
@@ -90,11 +100,11 @@ async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
   styleLinkElem.href = styleUrl;
   headElem.appendChild(styleLinkElem);
   
-  /** @type {import('../lib/webmidi').WebMidi} */
-  const webmidi = /** @type {any} */(window).WebMidi;
+  /** @type {import('../lib/JZZ')} */
+  const JZZ = /** @type {any} */(window).JZZ;
   
-  /** @type {import('../lib/webmidi').Input | null} */
-  let curMidiInput = null;
+  /** @type {IMidiInputConnection | null} */
+  let curMidiConnection = null;
   
   /** @type {string | null} */
   let preferredMidiInputName = null;
@@ -127,7 +137,8 @@ async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
   template.innerHTML = `
     <div class="yo1dog-pme-container">
       <div class="yo1dog-pme-header">MIDI Shortcuts</div>
-      <select class="yo1dog-pme-inputs"></select><br>
+      <select class="yo1dog-pme-inputs"></select>
+      <button class="yo1dog-pme-refreshInputs">Refresh</button><br>
       <br>
       <select class="yo1dog-pme-shortcuts"></select> <code class="yo1dog-pme-shortcutNotes"></code><br>
       <button class="yo1dog-pme-recordToggle">Record</button><br>
@@ -137,13 +148,14 @@ async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
     </div>
   `;
   
-  const pmeContainer       = requireQuerySelector   (template.content, '.yo1dog-pme-container');
-  const inputsElem         = requireQuerySelectorTag(pmeContainer,     '.yo1dog-pme-inputs', 'select');
-  const shortcutsElem      = requireQuerySelectorTag(pmeContainer,     '.yo1dog-pme-shortcuts', 'select');
-  const shortcutNotesElem  = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-shortcutNotes');
-  const recordToggleButton = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-recordToggle');
-  const noteBufferElem     = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-noteBuffer');
-  const messageElem        = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-message');
+  const pmeContainer        = requireQuerySelector   (template.content, '.yo1dog-pme-container');
+  const inputsElem          = requireQuerySelectorTag(pmeContainer,     '.yo1dog-pme-inputs', 'select');
+  const refreshInputsButton = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-refreshInputs');
+  const shortcutsElem       = requireQuerySelectorTag(pmeContainer,     '.yo1dog-pme-shortcuts', 'select');
+  const shortcutNotesElem   = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-shortcutNotes');
+  const recordToggleButton  = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-recordToggle');
+  const noteBufferElem      = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-noteBuffer');
+  const messageElem         = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-message');
   
   // the menu element is destroyed and recreated so we must watch and reattach
   const observer = new MutationObserver(() => {
@@ -161,10 +173,7 @@ async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
   });
   
   for (const shortcut of shortcuts) {
-    const optElem = document.createElement('option');
-    optElem.text = shortcut.name;
-    optElem.value = shortcut.name;
-    shortcutsElem.options.add(optElem);
+    shortcutsElem.options.add(new Option(shortcut.name, shortcut.name));
   }
   
   shortcutsElem.addEventListener('change', () => showShortcut(getSelectedShortcut()));
@@ -174,41 +183,69 @@ async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
   showShortcut(getSelectedShortcut());
   showNoteBuffer();
   
-  webmidi.enable(err => {
-    if (err) {
-      showMessage(`WebMidi could not be enabled.`);
-      logger.error(err);
-      return;
-    }
+  /** @type {import('../lib/JZZ').Engine} */
+  let jzz;
+  try {
+    jzz = await JZZ();
+  } catch(err) {
+    showMessage(`Failed to start MIDI engine.`);
+    logger.error(err);
+    return;
+  }
+  
+  jzz.onChange(() => refreshMidiInputList());
+  refreshMidiInputList();
+  
+  inputsElem.addEventListener('change', () => {
+    const midiInput = getSelectedMidiInput();
     
-    for (const midiInput of webmidi.inputs) {
-      const optElem = document.createElement('option');
-      optElem.text = midiInput.name;
-      optElem.value = midiInput.id;
-      inputsElem.options.add(optElem);
-    }
-    
-    if (preferredMidiInputName) {
-      const preferredMidiInput = webmidi.inputs.find(x => x.name === preferredMidiInputName);
-      if (preferredMidiInput) {
-        inputsElem.value = preferredMidiInput.id;
-      }
-    }
-    
-    inputsElem.addEventListener('change', () => {
-      const midiInput = getSelectedMidiInput();
-      if (!midiInput) return;
-      
+    if (midiInput) {
       preferredMidiInputName = midiInput.name;
       saveSettingsBackground();
-      setMidiInput(midiInput);
-    });
-    
-    const midiInput = getSelectedMidiInput();
-    if (midiInput) {
-      setMidiInput(midiInput);
     }
+    
+    setMidiInputBackground(midiInput);
   });
+  
+  refreshInputsButton.addEventListener('click', () => refreshMidiInputList());
+  
+  
+  function getMidiInputs() {
+    /** @type {IMidiInput[]} */
+    const midiInputs = jzz.info().inputs;
+    return midiInputs;
+  }
+  
+  function refreshMidiInputList() {
+    logger.log('Refreshing MIDI input list.');
+    const midiInputs = getMidiInputs();
+    
+    while (inputsElem.options.length > 0) {
+      inputsElem.options.remove(0);
+    }
+    
+    for (const midiInput of midiInputs) {
+      inputsElem.options.add(new Option(midiInput.name, midiInput.name));
+    }
+    
+    /** @type {IMidiInput | null} */
+    let selectMidiInput = null;
+    const curMidiInputName = curMidiConnection && curMidiConnection.input.name;
+    if (curMidiInputName) {
+      // select the current midi input (if it still exists)
+      selectMidiInput = midiInputs.find(x => x.name === curMidiInputName) || null;
+    }
+    if (!selectMidiInput && preferredMidiInputName) {
+      // select the preferred midi input if there is no current input or the current input no longer
+      // exists
+      selectMidiInput = midiInputs.find(x => x.name === preferredMidiInputName) || null;
+    }
+    if (selectMidiInput) {
+      inputsElem.value = selectMidiInput.name;
+    }
+    
+    setMidiInputBackground(getSelectedMidiInput());
+  }
   
   function getSelectedShortcut() {
     const selectedShortcutName = shortcutsElem.value;
@@ -219,11 +256,12 @@ async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
   }
   
   function getSelectedMidiInput() {
-    const selectedMidiInputId = inputsElem.value;
-    if (!selectedMidiInputId) return null;
+    const selectedMidiInputName = inputsElem.value;
+    if (!selectedMidiInputName) return null;
     
-    const midiInput = webmidi.inputs.find(x => x.id === selectedMidiInputId);
-    if (!midiInput) throw new Error(`MIDI input with ID '${selectedMidiInputId}' does not exists.`);
+    const midiInputs = getMidiInputs();
+    const midiInput = midiInputs.find(x => x.name === selectedMidiInputName);
+    if (!midiInput) throw new Error(`MIDI input with ID '${selectedMidiInputName}' does not exists.`);
     
     return midiInput;
   }
@@ -245,6 +283,19 @@ async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
   
   function showNoteBuffer() {
     noteBufferElem.innerText = notesToString(noteEventBuffer.map(x => x.note));
+  }
+  
+  const NOTE_NAMES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  /**
+   * @param {number} noteNumber
+   * @returns {INote}
+   */
+  function createNote(noteNumber) {
+    return {
+      name  : NOTE_NAMES_SHARP[noteNumber % 12],
+      octave: Math.floor(noteNumber / 12),
+      number: noteNumber
+    };
   }
   
   /** @param {INote[]} notes */
@@ -281,19 +332,36 @@ async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
     }
   }
   
-  /**
-   * @param {import('../lib/webmidi').Input} midiInput 
-   */
-  function setMidiInput(midiInput) {
-    if (curMidiInput) {
+  /** @param {IMidiInput | null} midiInput  */
+  async function setMidiInput(midiInput) {
+    if (curMidiConnection) {
+      if (midiInput && midiInput.name === curMidiConnection.input.name) {
+        return;
+      }
+      
       // remove all listeners from old input
-      curMidiInput.removeListener();
-      showMessage(`Stopped listening to MIDI input '${curMidiInput.name}' (${curMidiInput.id})`);
+      await curMidiConnection.port.disconnect();
+      showMessage(`Stopped listening to MIDI input '${curMidiConnection.input.name}'.`);
     }
     
-    curMidiInput = midiInput;
-    midiInput.addListener('noteon', 'all', event => onNote(event));
-    showMessage(`Listening to MIDI input '${midiInput.name}' (${midiInput.id})`);
+    curMidiConnection = null;
+    
+    if (midiInput) {
+      const midiInputPort = await jzz.openMidiIn(midiInput.name);
+      await midiInputPort.connect(onMidiMessage);
+      
+      curMidiConnection = {
+        input: midiInput,
+        port: midiInputPort
+      };
+      
+      showMessage(`Listening to MIDI input '${midiInput.name}'`);
+    }
+  }
+  /** @param {IMidiInput | null} midiInput  */
+  function setMidiInputBackground(midiInput) {
+    setMidiInput(midiInput)
+    .catch(err => logger.error(`Error setting midi input to '${midiInput?.name}'.`, err));
   }
   
   function startRecording() {
@@ -384,12 +452,18 @@ async function pianoMarvelEnhancements({webmidiUrl, styleUrl}) {
       };
     });
   }
-
-  /** @param {import('../lib/webmidi').InputEventNoteon} event */
-  function onNote(event) {
+  
+  /** @param {any} msg */
+  function onMidiMessage(msg) {
+    if (msg.isNoteOn()) {
+      onNote(msg);
+    }
+  }
+  /** @param {any} msg */
+  function onNote(msg) {
     noteEventBuffer.push({
-      timestampMs: event.timestamp,
-      note: event.note
+      timestampMs: Date.now(), // JZZ current does not support timestamps
+      note: createNote(msg.getNote())
     });
     if (noteEventBuffer.length > BUFFER_MAX_LENGTH) {
       noteEventBuffer.splice(0, noteEventBuffer.length - BUFFER_MAX_LENGTH);

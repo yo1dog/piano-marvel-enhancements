@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/yo1dog/piano-marvel-enhancements#readme",
   "devDependencies": {
+    "@types/webmidi": "^2.0.4",
     "@typescript-eslint/eslint-plugin": "^2.33.0",
     "@typescript-eslint/parser": "^2.33.0",
     "eslint": "^7.0.0",

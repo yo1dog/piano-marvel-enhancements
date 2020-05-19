@@ -7,22 +7,24 @@ User script to enhance pianomarvel.com with new features.
 
 ## Requirements
 
-Requires Chrome or Edge browser. Check your [browser compatibilty](https://developer.mozilla.org/en-US/docs/Web/API/MIDIAccess#Browser_compatibility) with the MIDI Access API.
 Requires one of the following browser plugins:
   - [Violentmonkey](https://violentmonkey.github.io/)
+  - [Greasemonkey](https://addons.mozilla.org/en-US/firefox/addon/greasemonkey/)
   - [Tampermonkey](https://www.tampermonkey.net/)
+
+If your browser supports the MIDI Access API (check [here](https://developer.mozilla.org/en-US/docs/Web/API/MIDIAccess#Browser_compatibility)), you may not need the following. However, I recommend installing them anyway for the best experience. If you are having issues (such as your MIDI device not showing up), these plugins may help.
+- [Jazz-Plugin](https://jazz-soft.net/download/Jazz-Plugin/)
+- [Jazz-MIDI](https://jazz-soft.net/download/#jazzmidi)
 
 
 ## Install
 
 Click here to install: [pianoMarvelEnhancements.user.js](https://github.com/yo1dog/piano-marvel-enhancements/raw/master/src/pianoMarvelEnhancements.user.js)
 
-
 Because pianomarvel.com does not use HTTPS, Chrome (and perhaps other browsers) normally does not allow it to access your MIDI devices. To get around this you must:
 1. Navigate to chrome://flags/#unsafely-treat-insecure-origin-as-secure
 2. Enable the feature and add `http://pianomarvel.com`
 3. Restart Chrome.
-
 
 
 ## Usage
