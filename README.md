@@ -15,7 +15,7 @@ Requires one of the following browser plugins:
   - [Greasemonkey](https://addons.mozilla.org/en-US/firefox/addon/greasemonkey/)
   - [Tampermonkey](https://www.tampermonkey.net/)
 
-If your browser supports the MIDI Access API (check [here](https://developer.mozilla.org/en-US/docs/Web/API/MIDIAccess#Browser_compatibility)), you may not need the following. However, I recommend installing them anyway for the best experience. If you are having issues (such as your MIDI device not showing up), these plugins may help.
+You *may* not have to install the following if your browser supports the MIDI Access API (check [here](https://developer.mozilla.org/en-US/docs/Web/API/MIDIAccess#Browser_compatibility)). However, I strongly recommend installing them anyway for the best experience.
 - [Jazz-Plugin](https://jazz-soft.net/download/Jazz-Plugin/)
 - [Jazz-MIDI](https://jazz-soft.net/download/#jazzmidi)
 
@@ -23,11 +23,6 @@ If your browser supports the MIDI Access API (check [here](https://developer.moz
 ## Install
 
 Click here to install: [pianoMarvelEnhancements.user.js](https://github.com/yo1dog/piano-marvel-enhancements/raw/master/src/pianoMarvelEnhancements.user.js)
-
-Because pianomarvel.com does not use HTTPS, Chrome (and perhaps other browsers) normally does not allow it to access your MIDI devices. To get around this you must:
-1. Navigate to chrome://flags/#unsafely-treat-insecure-origin-as-secure
-2. Enable the feature and add `http://pianomarvel.com`
-3. Restart Chrome.
 
 
 ## Usage
@@ -37,7 +32,7 @@ Because pianomarvel.com does not use HTTPS, Chrome (and perhaps other browsers) 
 3. Select the MIDI device you want to use to activate shortcuts.
 4. Select the action you want to set a shortcut for.
 5. Click the record button.
-6. Play a sequence of notes that will active the shortcut. Must be 1-5 notes. The timing of your notes does not matter, only the sequence. Make sure to choose sequences that you will not play by accident.
+6. Play a sequence of notes that will activate the shortcut. Must be 1-5 notes. The timing of your notes does not matter, only the sequence. Make sure to choose sequences that you will not play by accident.
 7. Click the stop button.
 8. Repeat for all desired actions.
 
@@ -56,10 +51,19 @@ Assess  | Clicks the Assess button at the bottom.
 Stop    | Clicks the Prepare or the Assess button at the bottom if they are active.
 
 
-## Debugging
+## Issues / Debugging
 
-I suggest installed in the Jazz plugins listed above for the best experience.
+If you are having issues (such as your MIDI device not showing up), and you don't have the Jazz plugins installed (listed above), install them.
 
-If the list of MIDI devices is not updating, try restarting your browser. This may be necessary depending on your browser, operating system, and/or plugins.
+If the list of MIDI devices is not updating, try restarting your browser. This may be necessary depending on your browser, operating system, device, and/or plugins.
 
 Check the messages in the output box in the MIDI Shortcuts module in the menu. Check your browser's console logs for more verbose information.
+
+-----
+
+The following only applies if you don't have the Jazz plugins installed (again, I *strongly* suggest you do):
+
+Because pianomarvel.com does not use HTTPS, Chrome (and other Chromium browsers such as Edge) does not allow it to access your MIDI devices. To get around this you must:
+1. Navigate to chrome://flags/#unsafely-treat-insecure-origin-as-secure
+2. Enable the feature and add `http://pianomarvel.com`
+3. Restart your browser.
