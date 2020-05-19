@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          Piano Marvel Enhancements
 // @namespace     http://yo1.dog
-// @version       2.0.0
+// @version       2.0.1
 // @description   Adds enhancements to painomarvel.com
 // @author        Mike "yo1dog" Moore
 // @homepageURL   https://github.com/yo1dog/piano-marvel-enhancements#readme
@@ -71,7 +71,8 @@ console.log('yo1dog-pme: Piano Marvel Enhancements loaded');
 async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   const SHORTCUT_MAX_LENGTH = 5;
   const SHORTCUT_MAX_DUR_MS = 5000;
-  const NOTE_BUFFER_MAX_LENGTH = SHORTCUT_MAX_LENGTH;
+  const NOTE_EVENT_BUFFER_MAX_LENGTH = SHORTCUT_MAX_LENGTH;
+  const NOTE_BUFFER_MAX_LENGTH = NOTE_EVENT_BUFFER_MAX_LENGTH;
   const MESSAGE_BUFFER_MAX_LENGTH = 20;
   
   const logger = {
@@ -109,6 +110,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   /** @type {IMidiInputConnection | null} */ let   curMidiConnection      = null;
   /** @type {string | null}               */ let   preferredMidiInputName = null;
   /** @type {INoteEvent[]}                */ const noteEventBuffer        = [];
+  /** @type {INote[]}                     */ const noteBuffer             = [];
   /** @type {number | null}               */ let   curRecordingLength     = null;
   /** @type {IMessage[]}                  */ const messageBuffer          = [];
   
@@ -279,7 +281,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   }
   
   function showNoteBuffer() {
-    noteBufferElem.innerText = notesToString(noteEventBuffer.map(x => x.note));
+    noteBufferElem.innerText = notesToString(noteBuffer);
   }
   
   const NOTE_NAMES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -388,9 +390,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
       text,
       isError: isError || false
     });
-    if (messageBuffer.length > MESSAGE_BUFFER_MAX_LENGTH) {
-      messageBuffer.splice(0, messageBuffer.length - MESSAGE_BUFFER_MAX_LENGTH);
-    }
+    clampArrayLeft(messageBuffer, MESSAGE_BUFFER_MAX_LENGTH);
     
     while (messagesElem.firstChild) {
       messagesElem.removeChild(messagesElem.firstChild);
@@ -488,13 +488,17 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   }
   /** @param {any} msg */
   function onNote(msg) {
-    noteEventBuffer.push({
+    /** @type {INoteEvent} */
+    const noteEvent = {
       timestampMs: Date.now(), // JZZ current does not support timestamps
       note: createNote(msg.getNote())
-    });
-    if (noteEventBuffer.length > NOTE_BUFFER_MAX_LENGTH) {
-      noteEventBuffer.splice(0, noteEventBuffer.length - NOTE_BUFFER_MAX_LENGTH);
-    }
+    };
+    
+    noteEventBuffer.push(noteEvent);
+    clampArrayLeft(noteEventBuffer, NOTE_EVENT_BUFFER_MAX_LENGTH);
+    
+    noteBuffer.push(noteEvent.note);
+    clampArrayLeft(noteBuffer, NOTE_BUFFER_MAX_LENGTH);
     
     showNoteBuffer();
     
@@ -529,6 +533,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
       
       if (didMatch) {
         executeShortcut(shortcut);
+        clearNoteBuffer();
         break;
       }
     }
@@ -624,6 +629,16 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
     const elem = requireQuerySelector(parent, selectors);
     if (elem.tagName.toUpperCase() !== tagName.toUpperCase()) throw new Error(`Found ${selectors} but it is a ${elem.tagName} and not ${tagName}`);
     return /** @type {any} */(elem);
+  }
+  
+  /**
+   * @param {any[]} arr 
+   * @param {number} maxLength 
+   */
+  function clampArrayLeft(arr, maxLength) {
+    if (arr.length > maxLength) {
+      arr.splice(0, arr.length - maxLength);
+    }
   }
 }
 
