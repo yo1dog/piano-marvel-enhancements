@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          Piano Marvel Enhancements
 // @namespace     http://yo1.dog
-// @version       2.0.3
+// @version       2.0.4
 // @description   Adds enhancements to painomarvel.com
 // @author        Mike "yo1dog" Moore
 // @homepageURL   https://github.com/yo1dog/piano-marvel-enhancements#readme
@@ -100,11 +100,19 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   }
   
   logger.log('Injecting style...');
-  const styleLinkElem = document.createElement('link');
-  styleLinkElem.rel = 'stylesheet';
-  styleLinkElem.type = 'text/css';
-  styleLinkElem.href = styleUrl;
-  headElem.appendChild(styleLinkElem);
+  // there is some wierd bug with Violentmonkey on Chrome in which CSS is loaded but not applied
+  // after the user script is updated. So instead of injecting a <link href="..."> we manually
+  // fetch the CSS and inject it into a <style>
+  const req = await fetch(styleUrl);
+  if (!req.ok) {
+    console.error(`Failed to load CSS.`, req.status);
+  } else {
+    const css = await req.text();
+    const styleElem = document.createElement('style');
+    styleElem.type = 'text/css';
+    styleElem.textContent = css;
+    headElem.appendChild(styleElem);
+  }
   
   /** @type {import('../lib/JZZ')}        */ const JZZ                    = /** @type {any} */(window).JZZ;
   /** @type {IMidiInputConnection | null} */ let   curMidiConnection      = null;
