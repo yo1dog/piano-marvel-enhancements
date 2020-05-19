@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          Piano Marvel Enhancements
 // @namespace     http://yo1.dog
-// @version       2.0.1
+// @version       2.0.2
 // @description   Adds enhancements to painomarvel.com
 // @author        Mike "yo1dog" Moore
 // @homepageURL   https://github.com/yo1dog/piano-marvel-enhancements#readme
@@ -332,7 +332,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   }
   /** @param {boolean} isRecording */
   function getRecordButtonInnerHTML(isRecording) {
-    return isRecording? '&#x23f9; Stop' : '&#x23fa; Record';
+    return isRecording? '&#x23f9;&#xFE0E; Stop' : '&#x23fa;&#xFE0E; Record';
   }
   
   /** @param {IMidiInput | null} midiInput  */
