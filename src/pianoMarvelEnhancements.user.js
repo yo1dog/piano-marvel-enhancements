@@ -5,7 +5,7 @@
 // @description   Adds enhancements to painomarvel.com
 // @author        Mike "yo1dog" Moore
 // @homepageURL   https://github.com/yo1dog/piano-marvel-enhancements#readme
-// #@icon          https://github.com/yo1dog/piano-marvel-enhancements/raw/master/icon.ico
+// @icon          https://github.com/yo1dog/piano-marvel-enhancements/raw/master/icon.ico
 // @match         *://pianomarvel.com/nextgen/*
 // @run-at        document-end
 // @resource      webmidiResource ../lib/webmidi.min.js?v=1
