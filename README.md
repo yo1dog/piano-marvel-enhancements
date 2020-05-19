@@ -55,4 +55,8 @@ Stop    | Clicks the Prepare or the Assess button at the bottom if they are acti
 
 ## Debugging
 
-Check your browser's console logs.
+I suggest installed in the Jazz plugins listed above for the best experience.
+
+If the list of MIDI devices is not updating, try restarting your browser. This may be necessary depending on your browser, operating system, and/or plugins.
+
+Check the messages in the output box in the MIDI Shortcuts module in the menu. Check your browser's console logs for more verbose information.
