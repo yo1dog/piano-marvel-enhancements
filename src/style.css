@@ -6,6 +6,9 @@
   background-color: white;
   text-transform: none;
 }
+.yo1dog-pme-container option {
+  font-family: sans-serif;
+}
 .yo1dog-pme-header {
   text-align: center;
   margin-bottom: 5pt;

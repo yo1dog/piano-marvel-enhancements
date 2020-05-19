@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          Piano Marvel Enhancements
 // @namespace     http://yo1.dog
-// @version       2.0.2
+// @version       2.0.3
 // @description   Adds enhancements to painomarvel.com
 // @author        Mike "yo1dog" Moore
 // @homepageURL   https://github.com/yo1dog/piano-marvel-enhancements#readme
@@ -9,7 +9,7 @@
 // @match         *://pianomarvel.com/nextgen/*
 // @run-at        document-end
 // @resource      jzzResource ../lib/JZZ.js?v=1
-// @resource      styleResource style.css?v=7
+// @resource      styleResource style.css?v=8
 // @grant         GM.getResourceURL
 // @grant         GM.getResourceUrl
 // ==/UserScript==
