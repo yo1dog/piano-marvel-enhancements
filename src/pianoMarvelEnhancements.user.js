@@ -490,7 +490,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   function onNote(msg) {
     /** @type {INoteEvent} */
     const noteEvent = {
-      timestampMs: Date.now(), // JZZ current does not support timestamps
+      timestampMs: Date.now(), // JZZ currently does not support timestamps
       note: createNote(msg.getNote())
     };
     
