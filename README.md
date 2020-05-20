@@ -5,7 +5,7 @@ User script to enhance pianomarvel.com with new features.
 - **MIDI Shortcuts**: Control the Piano Marvel web app using your MIDI device (piano/keyboard).
 
 
-![schreenshot](https://user-images.githubusercontent.com/1504597/82356211-e86a2200-99c8-11ea-8fb3-2de2b38ba6c6.png)
+![schreenshot](https://user-images.githubusercontent.com/1504597/82495016-17a78e80-9ab0-11ea-837b-1e425023e490.png)
 
 
 ## Requirements
