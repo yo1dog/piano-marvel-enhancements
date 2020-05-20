@@ -372,7 +372,10 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   /** @param {IMidiInput | null} midiInput  */
   function setMidiInputBackground(midiInput) {
     setMidiInput(midiInput)
-    .catch(err => logger.error(`Error setting midi input to '${midiInput?.name}'.`, err));
+    .catch(err => {
+      showErrorMessage(`Error setting midi input to ${midiInput? `'${midiInput.name}'` : 'null'}: ${err.message}`);
+      logger.error(err);
+    });
   }
   
   function startRecording() {
