@@ -1,15 +1,14 @@
 // ==UserScript==
 // @name          Piano Marvel Enhancements
 // @namespace     http://yo1.dog
-// @version       2.0.4
+// @version       3.0.0
 // @description   Adds enhancements to painomarvel.com
 // @author        Mike "yo1dog" Moore
 // @homepageURL   https://github.com/yo1dog/piano-marvel-enhancements#readme
 // @icon          https://github.com/yo1dog/piano-marvel-enhancements/raw/master/icon.ico
 // @match         *://pianomarvel.com/nextgen/*
-// @run-at        document-end
-// @resource      jzzResource ../lib/JZZ.js?v=1
-// @resource      styleResource style.css?v=8
+// @run-at        document-start
+// @resource      styleResource style.css?v=11
 // @grant         GM.getResourceURL
 // @grant         GM.getResourceUrl
 // ==/UserScript==
@@ -38,42 +37,49 @@
  * @property {boolean} isPreparing
  * @property {boolean} isAssessing
  * 
- * @typedef IMidiInput
- * @property {string} name
- * @property {string} manufacturer
- * @property {string} version
- * @property {string} engine
- * 
- * @typedef IMidiInputConnection
- * @property {IMidiInput} input
- * @property {import('../lib/JZZ').Port} port
- * 
  * @typedef IMessage
  * @property {string} text
  * @property {boolean} isError
  */
 
-let __execIdSeq = 0; // eslint-disable-line @typescript-eslint/naming-convention
-
 console.log('yo1dog-pme: Piano Marvel Enhancements loaded');
 
 (async () => {
-  const jzzUrl   = await (GM.getResourceUrl || GM.getResourceURL)('jzzResource');
+  // inject a script tag that contains the pianoMarvelEnhancements function
+  const script = window.document.createElement('script');
+  script.textContent = `(${pianoMarvelEnhancements})().catch(err => console.error('yo1dog-pme:', err));`;
+  document.head.prepend(script);
+  
+  // inject CSS
+  // There is some wierd bug with Violentmonkey on Chrome in which CSS is loaded but not applied
+  // after the user script is updated. So instead of injecting a <link href="..."> we manually
+  // fetch the CSS and inject it into a <style>
   const styleUrl = await (GM.getResourceUrl || GM.getResourceURL)('styleResource');
-  await execOnPage(window, pianoMarvelEnhancements, {jzzUrl, styleUrl});
+  const req = await fetch(styleUrl);
+  if (!req.ok) throw new Error(`Failed to load CSS: ${req.status}`);
+  const css = await req.text();
+  
+  const styleElem = document.createElement('style');
+  styleElem.type = 'text/css';
+  styleElem.textContent = css;
+  document.head.appendChild(styleElem);
 })().catch(err => console.error('yo1dog-pme:', err));
 
-/**
- * @param {object} options 
- * @param {string} options.jzzUrl 
- * @param {string} options.styleUrl 
- */
-async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
+
+async function pianoMarvelEnhancements() {
   const SHORTCUT_MAX_LENGTH = 5;
   const SHORTCUT_MAX_DUR_MS = 5000;
   const NOTE_EVENT_BUFFER_MAX_LENGTH = SHORTCUT_MAX_LENGTH;
   const NOTE_BUFFER_MAX_LENGTH = NOTE_EVENT_BUFFER_MAX_LENGTH;
   const MESSAGE_BUFFER_MAX_LENGTH = 20;
+  const FIRST_PM_WEB_SOCKET_TIMEOUT_MS = 5000;
+  
+  const NOTE_NAMES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const PIANO_MARVEL_METHOD_NAME_MAP = {
+    // from Piano Marvel JS
+    pingPlugin:1,startSession:2,getListDevices:3,userSelectDevice:4,checkSongMidiCache:5,saveSongMidi:6,getCurrentDevice:7,preparePlayingData:9,stopPlayMidi:10,playMidiSong:12,saveMidiDeviceKeySetting:14,getLatency:15,getPluginInformation:17,saveNotationData:19,getNotationData:20,userSaveEncryptionKey:21,userGetEncryptionKey:22,userSaveSpeakerOutput:23,userStartSettingDevice:27,userStopSettingDevice:28,userGetDeviceKey:29,keepAlive:31,saveToken:45,startWaitForMeMode:46,stopWaitForMeMode:47,getPianoKeysWaitForMeMode:48,getPracticeMinutesByClientID:49,savePracticeMinutesByClientID:50,resetPracticeMinutesBySongID:51,resetPracticeMinutesByClientID:52,startSettingDeviceSingleConnection:53,stopSettingDeviceSingleConnection:54
+  };
+  const PIANO_MARVEL_SEND_NOTES_METHOD = PIANO_MARVEL_METHOD_NAME_MAP.startSettingDeviceSingleConnection;
   
   const logger = {
     /** @param {any} message @param {any[]} optionalParams */
@@ -89,38 +95,59 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   
   logger.log('Piano Marvel Enhancements started');
   
-  const headElem = document.getElementsByTagName('head')[0];
+  const template = document.createElement('template');
+  template.innerHTML = `
+    <div class="yo1dog-pme-container">
+      <div class="yo1dog-pme-header">MIDI Shortcuts</div>
+      <div>Status: <span class="yo1dog-pme-status"></span></div>
+      <div>
+        <select class="yo1dog-pme-shortcuts"></select>
+        <code class="yo1dog-pme-shortcutNotes"></code>
+        <br>
+        <button class="yo1dog-pme-recordToggle">${getRecordButtonInnerHTML(false)}</button>
+      </div>
+      <div><code class="yo1dog-pme-noteBuffer"></code></div>
+      <div class="yo1dog-pme-messages"></div>
+    </div>
+  `;
   
-  logger.log('Injecting JZZ...');
-  const jzzScriptElem = document.createElement('script');
-  jzzScriptElem.src = jzzUrl;
-  headElem.appendChild(jzzScriptElem);
-  if (!/** @type {any} */(window).JZZ) {
-    await new Promise(resolve => jzzScriptElem.addEventListener('load', () => resolve()));
-  }
+  const pmeContainer        = requireQuerySelector   (template.content, '.yo1dog-pme-container');
+  const statusElem          = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-status');
+  const shortcutsElem       = requireQuerySelectorTag(pmeContainer,     '.yo1dog-pme-shortcuts', 'select');
+  const shortcutNotesElem   = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-shortcutNotes');
+  const recordToggleButton  = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-recordToggle');
+  const noteBufferElem      = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-noteBuffer');
+  const messagesElem        = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-messages');
   
-  logger.log('Injecting style...');
-  // there is some wierd bug with Violentmonkey on Chrome in which CSS is loaded but not applied
-  // after the user script is updated. So instead of injecting a <link href="..."> we manually
-  // fetch the CSS and inject it into a <style>
-  const req = await fetch(styleUrl);
-  if (!req.ok) {
-    console.error(`Failed to load CSS.`, req.status);
-  } else {
-    const css = await req.text();
-    const styleElem = document.createElement('style');
-    styleElem.type = 'text/css';
-    styleElem.textContent = css;
-    headElem.appendChild(styleElem);
-  }
+  /** @type {WebSocket | null} */ let   curPMWebSocket     = null;
+  /** @type {INoteEvent[]}     */ const noteEventBuffer    = [];
+  /** @type {INote[]}          */ const noteBuffer         = [];
+  /** @type {number | null}    */ let   curRecordingLength = null;
+  /** @type {IMessage[]}       */ const messageBuffer      = [];
   
-  /** @type {import('../lib/JZZ')}        */ const JZZ                    = /** @type {any} */(window).JZZ;
-  /** @type {IMidiInputConnection | null} */ let   curMidiConnection      = null;
-  /** @type {string | null}               */ let   preferredMidiInputName = null;
-  /** @type {INoteEvent[]}                */ const noteEventBuffer        = [];
-  /** @type {INote[]}                     */ const noteBuffer             = [];
-  /** @type {number | null}               */ let   curRecordingLength     = null;
-  /** @type {IMessage[]}                  */ const messageBuffer          = [];
+  // override the WebSocket class so we can intercept the creation of web sockets
+  // @ts-ignore
+  window.WebSocket = new Proxy(window.WebSocket, {
+    construct(WebSocket, args) {
+      // @ts-ignore
+      const sock = new WebSocket(...args);
+      onWebSocketCreated(sock);
+      return sock;
+    }
+  });
+  
+  // Because of a race condition between the user script and the page's javascript execution time,
+  // the above override may not occur until after the inital web socket was created. If this occurs
+  // then we are unable to intercept it. In this case, show an error.
+  // The only fix for this situation is to have Piano Marvel open a new web socket which we can
+  // intercept. Disconnecting the web socket (by restarting the plugin, for example) accomplishes
+  // this.
+  showMessage(`Waiting to connect to Piano Marvel web socket...`);
+  setTimeout(() => {
+    if (!curPMWebSocket) {
+      showErrorMessage(`Unable to connect to Piano Marvel web socket. Try hard-refreshing the page or try closing and reopening the Piano Marvel plugin (use the "Exit" button and not the "Restart" button).`);
+    }
+  }, FIRST_PM_WEB_SOCKET_TIMEOUT_MS);
   
   /** @type {IShortcut[]} */
   const shortcuts = [
@@ -139,30 +166,6 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   } catch(err) {
     logger.error(`Error loading settings.`, err);
   }
-  
-  const template = document.createElement('template');
-  template.innerHTML = `
-    <div class="yo1dog-pme-container">
-      <div class="yo1dog-pme-header">MIDI Shortcuts</div>
-      <select class="yo1dog-pme-inputs"></select>
-      <button class="yo1dog-pme-refreshInputs">Refresh</button><br>
-      <br>
-      <select class="yo1dog-pme-shortcuts"></select> <code class="yo1dog-pme-shortcutNotes"></code><br>
-      <button class="yo1dog-pme-recordToggle">${getRecordButtonInnerHTML(false)}</button><br>
-      <br>
-      <code class="yo1dog-pme-noteBuffer"></code><br>
-      <div class="yo1dog-pme-messages"></div>
-    </div>
-  `;
-  
-  const pmeContainer        = requireQuerySelector   (template.content, '.yo1dog-pme-container');
-  const inputsElem          = requireQuerySelectorTag(pmeContainer,     '.yo1dog-pme-inputs', 'select');
-  const refreshInputsButton = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-refreshInputs');
-  const shortcutsElem       = requireQuerySelectorTag(pmeContainer,     '.yo1dog-pme-shortcuts', 'select');
-  const shortcutNotesElem   = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-shortcutNotes');
-  const recordToggleButton  = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-recordToggle');
-  const noteBufferElem      = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-noteBuffer');
-  const messagesElem        = requireQuerySelector   (pmeContainer,     '.yo1dog-pme-messages');
   
   // the menu element is destroyed and recreated so we must watch and reattach
   const observer = new MutationObserver(() => {
@@ -186,72 +189,59 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   shortcutsElem.addEventListener('change', () => showShortcut(getSelectedShortcut()));
   recordToggleButton.addEventListener('click', () => toggleRecording());
   
-  
   showShortcut(getSelectedShortcut());
-  showNoteBuffer();
+  refreshNoteBufferDisplay();
+  refreshMessagesDisplay();
+  refreshStatus();
   
-  /** @type {import('../lib/JZZ').Engine} */
-  let jzz;
-  try {
-    jzz = await JZZ();
-  } catch(err) {
-    showErrorMessage(`Failed to start MIDI engine.`);
-    logger.error(err);
-    return;
+  
+  /** @param {WebSocket} webSocket */
+  function onWebSocketCreated(webSocket) {
+    // assume it's a websocket to the Piano Marvel plugin
+    setPianoMarvelWebSocket(webSocket);
   }
   
-  jzz.onChange(() => refreshMidiInputList());
-  refreshMidiInputList();
-  
-  inputsElem.addEventListener('change', () => {
-    const midiInput = getSelectedMidiInput();
+  /** @param {WebSocket} webSocket */
+  function setPianoMarvelWebSocket(webSocket) {
+    let socketWasOpened = false;
+    curPMWebSocket = webSocket;
     
-    if (midiInput) {
-      preferredMidiInputName = midiInput.name;
-      saveSettingsBackground();
+    webSocket.addEventListener('message', event => {
+      onPianoMarvelMessage(event, webSocket);
+    });
+    webSocket.addEventListener('close', () => {
+      if (!socketWasOpened) return;
+      showErrorMessage(`Piano Marvel web socket closed.`);
+      refreshStatus();
+    });
+    
+    if (webSocket.readyState === WebSocket.OPEN) {
+      onSocketOpen();
+    }
+    else {
+      webSocket.addEventListener('open', () => onSocketOpen());
     }
     
-    setMidiInputBackground(midiInput);
-  });
-  
-  refreshInputsButton.addEventListener('click', () => refreshMidiInputList());
-  
-  
-  function getMidiInputs() {
-    /** @type {IMidiInput[]} */
-    const midiInputs = jzz.info().inputs;
-    return midiInputs;
+    function onSocketOpen() {
+      socketWasOpened = true;
+      showMessage(`Listening to Piano Marvel web socket on '${webSocket.url}'.`);
+      refreshStatus();
+      requestPluginSendNotes(webSocket);
+    }
   }
   
-  function refreshMidiInputList() {
-    logger.log('Refreshing MIDI input list.');
-    const midiInputs = getMidiInputs();
-    
-    while (inputsElem.options.length > 0) {
-      inputsElem.options.remove(0);
+  function refreshStatus() {
+    const isConnected = curPMWebSocket && curPMWebSocket.readyState === WebSocket.OPEN;
+    if (isConnected) {
+      statusElem.innerText = 'Connected';
+      statusElem.classList.remove('yo1dog-pme-bad');
+      statusElem.classList.add   ('yo1dog-pme-good');
     }
-    
-    for (const midiInput of midiInputs) {
-      inputsElem.options.add(new Option(midiInput.name, midiInput.name));
+    else {
+      statusElem.innerText = 'Disconnected';
+      statusElem.classList.remove('yo1dog-pme-good');
+      statusElem.classList.add   ('yo1dog-pme-bad');
     }
-    
-    /** @type {IMidiInput | null} */
-    let selectMidiInput = null;
-    const curMidiInputName = curMidiConnection && curMidiConnection.input.name;
-    if (curMidiInputName) {
-      // select the current midi input (if it still exists)
-      selectMidiInput = midiInputs.find(x => x.name === curMidiInputName) || null;
-    }
-    if (!selectMidiInput && preferredMidiInputName) {
-      // select the preferred midi input if there is no current input or the current input no longer
-      // exists
-      selectMidiInput = midiInputs.find(x => x.name === preferredMidiInputName) || null;
-    }
-    if (selectMidiInput) {
-      inputsElem.value = selectMidiInput.name;
-    }
-    
-    setMidiInputBackground(getSelectedMidiInput());
   }
   
   function getSelectedShortcut() {
@@ -260,17 +250,6 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
     if (!shortcut) throw new Error(`Shortcut with name '${selectedShortcutName}' does not exists.`);
     
     return shortcut;
-  }
-  
-  function getSelectedMidiInput() {
-    const selectedMidiInputName = inputsElem.value;
-    if (!selectedMidiInputName) return null;
-    
-    const midiInputs = getMidiInputs();
-    const midiInput = midiInputs.find(x => x.name === selectedMidiInputName);
-    if (!midiInput) throw new Error(`MIDI input with ID '${selectedMidiInputName}' does not exists.`);
-    
-    return midiInput;
   }
   
   /** @param {IShortcut} shortcut */
@@ -288,21 +267,8 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
     shortcutNotesElem.innerText = notesToString(notes);
   }
   
-  function showNoteBuffer() {
+  function refreshNoteBufferDisplay() {
     noteBufferElem.innerText = notesToString(noteBuffer);
-  }
-  
-  const NOTE_NAMES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-  /**
-   * @param {number} noteNumber
-   * @returns {INote}
-   */
-  function createNote(noteNumber) {
-    return {
-      name  : NOTE_NAMES_SHARP[noteNumber % 12],
-      octave: Math.floor(noteNumber / 12),
-      number: noteNumber
-    };
   }
   
   /** @param {INote[]} notes */
@@ -313,7 +279,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
       : notes.map(note => `${note.name}${note.octave}`).join(', ')
     );
   }
-
+  
   function toggleRecording() {
     if (curRecordingLength === null) {
       startRecording();
@@ -326,7 +292,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
       const recordedNotes = getRecording(SHORTCUT_MAX_LENGTH);
       stopRecording();
       clearNoteBuffer();
-      showNoteBuffer();
+      refreshNoteBufferDisplay();
       
       const shortcut = getSelectedShortcut();
       shortcut.notes = recordedNotes;
@@ -341,41 +307,6 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
   /** @param {boolean} isRecording */
   function getRecordButtonInnerHTML(isRecording) {
     return isRecording? '&#x23f9;&#xFE0E; Stop' : '&#x23fa;&#xFE0E; Record';
-  }
-  
-  /** @param {IMidiInput | null} midiInput  */
-  async function setMidiInput(midiInput) {
-    if (curMidiConnection) {
-      if (midiInput && midiInput.name === curMidiConnection.input.name) {
-        return;
-      }
-      
-      // remove all listeners from old input
-      await curMidiConnection.port.disconnect();
-      showMessage(`Stopped listening to MIDI input '${curMidiConnection.input.name}'.`);
-    }
-    
-    curMidiConnection = null;
-    
-    if (midiInput) {
-      const midiInputPort = await jzz.openMidiIn(midiInput.name);
-      await midiInputPort.connect(onMidiMessage);
-      
-      curMidiConnection = {
-        input: midiInput,
-        port: midiInputPort
-      };
-      
-      showMessage(`Listening to MIDI input '${midiInput.name}'`);
-    }
-  }
-  /** @param {IMidiInput | null} midiInput  */
-  function setMidiInputBackground(midiInput) {
-    setMidiInput(midiInput)
-    .catch(err => {
-      showErrorMessage(`Error setting midi input to ${midiInput? `'${midiInput.name}'` : 'null'}: ${err.message}`);
-      logger.error(err);
-    });
   }
   
   function startRecording() {
@@ -406,7 +337,13 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
       isError: isError || false
     });
     clampArrayLeft(messageBuffer, MESSAGE_BUFFER_MAX_LENGTH);
-    
+    refreshMessagesDisplay();
+  }
+  /** @param {string} text */
+  function showErrorMessage(text) {
+    showMessage(text, true);
+  }
+  function refreshMessagesDisplay() {
     while (messagesElem.firstChild) {
       messagesElem.removeChild(messagesElem.firstChild);
     }
@@ -415,16 +352,12 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
       const divElem = document.createElement('div');
       divElem.innerText = message.text;
       if (message.isError) {
-        divElem.classList.add('yo1dog-pme-error');
+        divElem.classList.add('yo1dog-pme-bad');
       }
       messagesElem.appendChild(divElem);
     }
     
     messagesElem.scrollTop = messagesElem.scrollHeight;
-  }
-  /** @param {string} text */
-  function showErrorMessage(text) {
-    showMessage(text, true);
   }
   
   /** @returns {Promise<IDBDatabase>} */
@@ -450,8 +383,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
         shortcuts: shortcuts.map(shortcut => ({
           name: shortcut.name,
           notes: shortcut.notes
-        })),
-        preferredMidiInputName
+        }))
       };
       const request = objectStore.put(settings, 'primary');
       request.onerror = () => reject(request.error);
@@ -484,10 +416,6 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
               }
             }
           }
-          
-          if (settings.preferredMidiInputName) {
-            preferredMidiInputName = settings.preferredMidiInputName;
-          }
         }
         
         return resolve();
@@ -495,18 +423,31 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
     });
   }
   
-  /** @param {any} msg */
-  function onMidiMessage(msg) {
-    if (msg.isNoteOn()) {
+  /**
+   * @param {MessageEvent} event
+   * @param {WebSocket} webSocket
+   */
+  function onPianoMarvelMessage(event, webSocket) {
+    let msg;
+    try {
+      msg = JSON.parse(event.data);
+    } catch (err) { return; }
+    if (!msg) return;
+    
+    if (msg.isNoteOn) {
       onNote(msg);
     }
+    if (msg.methodName) {
+      onPianoMarvelMethod(msg, webSocket);
+    }
   }
+  
   /** @param {any} msg */
   function onNote(msg) {
     /** @type {INoteEvent} */
     const noteEvent = {
-      timestampMs: Date.now(), // JZZ currently does not support timestamps
-      note: createNote(msg.getNote())
+      timestampMs: msg.pressTime, 
+      note: createNote(msg.pitch, msg.octave)
     };
     
     noteEventBuffer.push(noteEvent);
@@ -515,7 +456,7 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
     noteBuffer.push(noteEvent.note);
     clampArrayLeft(noteBuffer, NOTE_BUFFER_MAX_LENGTH);
     
-    showNoteBuffer();
+    refreshNoteBufferDisplay();
     
     if (curRecordingLength !== null) {
       ++curRecordingLength;
@@ -554,20 +495,48 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
     }
   }
   
+  /**
+   * @param {any} msg
+   * @param {WebSocket} webSocket
+   */
+  function onPianoMarvelMethod(msg, webSocket) {
+    if (webSocket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    
+    // The Piano Marvel plugin only sends notes over the websocket at certain times. It starts
+    // sending notes after certain actions/methods (like changing instrument settings, starting
+    // prepare mode, etc.) and stops sending notes after others (like stoping prepare mode).
+    // Therefore, to keep notes always sending, we will send a message with a method that causes the
+    // plugin to start sending notes after every method response we receive. This way if the Piano
+    // Marvel app sends a method that stops the notes from sending we automatically start it again.
+    if (msg.methodName && msg.methodName !== PIANO_MARVEL_SEND_NOTES_METHOD) {
+      requestPluginSendNotes(webSocket);
+    }
+  }
+  
+  /** @param {WebSocket} webSocket */
+  function requestPluginSendNotes(webSocket) {
+    webSocket.send(JSON.stringify({
+      methodName: PIANO_MARVEL_SEND_NOTES_METHOD
+    }));
+  }
+  
   function clearNoteBuffer() {
     noteEventBuffer.splice(0, noteEventBuffer.length);
   }
   
   /** @param {IShortcut} shortcut */
   function executeShortcut(shortcut) {
-    showMessage(`Executing ${shortcut.name} shortcut.`);
     try {
       shortcut.exec();
     }
     catch(err) {
       showErrorMessage(`Failed to execute ${shortcut.name} shortcut: ${err.message}`);
       logger.error(err);
+      return;
     }
+    showMessage(`Executed ${shortcut.name} shortcut.`);
   }
   
   function doBack() {
@@ -655,55 +624,25 @@ async function pianoMarvelEnhancements({jzzUrl, styleUrl}) {
       arr.splice(0, arr.length - maxLength);
     }
   }
-}
-
-
-
-
-
-/**
- * @param {Window} window 
- * @param {(param?: any) => void | Promise<void>} fn 
- * @param {any} [jsonParam] 
- */
-async function execOnPage(window, fn, jsonParam) {
-  const execId = __execIdSeq++;
-  const eventName = 'exec-on-page-complete';
   
-  const script = window.document.createElement('script');
-  script.setAttribute('async', '');
-  script.textContent = `
-    (async () =>
-      await (${fn})(${JSON.stringify(jsonParam)})
-    )()
-    .then (result => document.dispatchEvent(new CustomEvent(${JSON.stringify(eventName)}, {detail: {id: ${JSON.stringify(execId)}, result}})))
-    .catch(error  => document.dispatchEvent(new CustomEvent(${JSON.stringify(eventName)}, {detail: {id: ${JSON.stringify(execId)}, error }})))
-  `;
-  
-  const result = await new Promise((resolve, reject) => {
-    /** @type {EventListener} */
-    const eventListener = event => {
-      if (
-        !(event instanceof CustomEvent) ||
-        !event.detail ||
-        event.detail.id !== execId
-      ) {
-        return;
-      }
-      
-      window.document.removeEventListener(eventName, eventListener);
-      
-      if (event.detail.error) {
-        reject(event.detail.error);
-        return;
-      }
-      resolve(event.detail.result);
-    };
+  /**
+   * @param {string} pitch
+   * @param {number} octave
+   * @returns {INote}
+   */
+  function createNote(pitch, octave) {
+    const noteBaseName = pitch.charAt(0).toUpperCase();
+    const noteSuffix = pitch.substring(1).toUpperCase();
     
-    window.document.addEventListener(eventName, eventListener);
-    window.document.body.appendChild(script);
-  });
-  
-  //window.document.body.removeChild(script);
-  return result;
+    let pitchNumber = NOTE_NAMES_SHARP.indexOf(noteBaseName);
+    if (noteSuffix === 'SHARP' || noteSuffix === 'SHARD') {
+      ++pitchNumber;
+    }
+    
+    return {
+      name  : NOTE_NAMES_SHARP[pitchNumber],
+      octave: octave,
+      number: (octave*12) + pitchNumber
+    };
+  }
 }

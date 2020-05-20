@@ -15,10 +15,6 @@ Requires one of the following browser plugins:
   - [Greasemonkey](https://addons.mozilla.org/en-US/firefox/addon/greasemonkey/)
   - [Tampermonkey](https://www.tampermonkey.net/)
 
-You *may* not have to install the following if your browser supports the MIDI Access API (check [here](https://developer.mozilla.org/en-US/docs/Web/API/MIDIAccess#Browser_compatibility)). However, I strongly recommend installing them anyway for the best experience.
-- [Jazz-Plugin](https://jazz-soft.net/download/Jazz-Plugin/)
-- [Jazz-MIDI](https://jazz-soft.net/download/#jazzmidi)
-
 
 ## Install
 
@@ -28,13 +24,13 @@ Click here to install: [pianoMarvelEnhancements.user.js](https://github.com/yo1d
 ## Usage
 
 1. Once you install the user script, navigate to the pianomarvel.com web app.
-2. Select "Menu" from the top left and you will notice a new "MIDI Shortcuts" section at the bottom.
-3. Select the MIDI device you want to use to activate shortcuts.
-4. Select the action you want to set a shortcut for.
-5. Click the record button.
-6. Play a sequence of notes that will activate the shortcut. Must be 1-5 notes. The timing of your notes does not matter, only the sequence. Make sure to choose sequences that you will not play by accident.
-7. Click the stop button.
-8. Repeat for all desired actions.
+2. Click "Menu" at the top left and you will notice a new "MIDI Shortcuts" section at the bottom.
+3. Select the action you want to set a shortcut for.
+4. Click the record button.
+5. Play a sequence of notes that will activate the shortcut. Must be 1-5 notes. The timing of your notes does not matter, only the sequence. Make sure to choose sequences that you will not play by accident.
+6. Click the stop button.
+7. Repeat for all desired actions.
+8. To remove a shortcut, click the record button and then the stop button without playing any notes.
 
 Your shortcuts are automatically saved in your browser so you only have to set them up once.
 
@@ -53,17 +49,8 @@ Stop    | Clicks the Prepare or the Assess button at the bottom if they are acti
 
 ## Issues / Debugging
 
-If you are having issues (such as your MIDI device not showing up), and you don't have the Jazz plugins installed (listed above), install them.
+Check the messages at the bottom of the menu. Check your browser's console logs for more verbose information.
 
-If the list of MIDI devices is not updating, try restarting your browser. This may be necessary depending on your browser, operating system, device, and/or plugins.
+If the status is "Disconnected", try hard-refreshing the page. If that doesn't help, try closing and reopening the Piano Marvel plugin. It is important that you close the plugin using the "Exit the application" button. Using the "Restart the application" does not force the Piano Marvel app to reconnect. Closing the plugin window only minimizes or backgrounds the plugin and does not actually close it. 
 
-Check the messages in the output box in the MIDI Shortcuts module in the menu. Check your browser's console logs for more verbose information.
-
------
-
-The following only applies if you don't have the Jazz plugins installed (again, I *strongly* suggest you do):
-
-Because pianomarvel.com does not use HTTPS, Chrome (and other Chromium browsers such as Edge) does not allow it to access your MIDI devices. To get around this you must:
-1. Navigate to chrome://flags/#unsafely-treat-insecure-origin-as-secure
-2. Enable the feature and add `http://pianomarvel.com`
-3. Restart your browser.
+This is caused by a race condition between the user script and the page's JavaScript execution time. The user script monkey patches the WebSocket class so it can intercept and capture the web socket that the Piano Marvel app creates. If this is not done before page's JavaScript executes and creates the WebSocket, the only remedy is to force the Piano Marvel app to create a new web socket. This can be done by closing the web socket via closing the plugin.
