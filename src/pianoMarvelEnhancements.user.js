@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          Piano Marvel Enhancements
 // @namespace     http://yo1.dog
-// @version       3.0.0
+// @version       3.0.1
 // @description   Adds enhancements to painomarvel.com
 // @author        Mike "yo1dog" Moore
 // @homepageURL   https://github.com/yo1dog/piano-marvel-enhancements#readme
@@ -226,7 +226,6 @@ async function pianoMarvelEnhancements() {
       socketWasOpened = true;
       showMessage(`Listening to Piano Marvel web socket on '${webSocket.url}'.`);
       refreshStatus();
-      requestPluginSendNotes(webSocket);
     }
   }
   
@@ -511,15 +510,10 @@ async function pianoMarvelEnhancements() {
     // plugin to start sending notes after every method response we receive. This way if the Piano
     // Marvel app sends a method that stops the notes from sending we automatically start it again.
     if (msg.methodName && msg.methodName !== PIANO_MARVEL_SEND_NOTES_METHOD) {
-      requestPluginSendNotes(webSocket);
+      webSocket.send(JSON.stringify({
+        methodName: PIANO_MARVEL_SEND_NOTES_METHOD
+      }));
     }
-  }
-  
-  /** @param {WebSocket} webSocket */
-  function requestPluginSendNotes(webSocket) {
-    webSocket.send(JSON.stringify({
-      methodName: PIANO_MARVEL_SEND_NOTES_METHOD
-    }));
   }
   
   function clearNoteBuffer() {
