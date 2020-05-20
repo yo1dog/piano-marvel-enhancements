@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          Piano Marvel Enhancements
 // @namespace     http://yo1.dog
-// @version       3.0.1
+// @version       3.0.2
 // @description   Adds enhancements to painomarvel.com
 // @author        Mike "yo1dog" Moore
 // @homepageURL   https://github.com/yo1dog/piano-marvel-enhancements#readme
@@ -145,7 +145,7 @@ async function pianoMarvelEnhancements() {
   showMessage(`Waiting to connect to Piano Marvel web socket...`);
   setTimeout(() => {
     if (!curPMWebSocket) {
-      showErrorMessage(`Unable to connect to Piano Marvel web socket. Try hard-refreshing the page or try closing and reopening the Piano Marvel plugin (use the "Exit" button and not the "Restart" button).`);
+      showErrorMessage(`Unable to find Piano Marvel web socket. Try hard-refreshing the page or try closing and reopening the Piano Marvel plugin (use the "Exit" button and not the "Restart" button).`);
     }
   }, FIRST_PM_WEB_SOCKET_TIMEOUT_MS);
   
@@ -198,6 +198,7 @@ async function pianoMarvelEnhancements() {
   /** @param {WebSocket} webSocket */
   function onWebSocketCreated(webSocket) {
     // assume it's a websocket to the Piano Marvel plugin
+    logger.log('Piano Marvel web socket created.');
     setPianoMarvelWebSocket(webSocket);
   }
   
