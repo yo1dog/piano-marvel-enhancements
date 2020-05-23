@@ -6,7 +6,9 @@
   background-color: white;
   text-transform: none;
 }
-.yo1dog-pme-container > div + div {
+.yo1dog-pme-container > div + div,
+.yo1dog-pme-module > div + div
+{
   margin-top: 7pt;
 }
 .yo1dog-pme-container option {

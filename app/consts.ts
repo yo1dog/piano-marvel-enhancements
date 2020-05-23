@@ -1,0 +1,37 @@
+export const sharpNoteNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'] as readonly string[];
+
+export const pmMethodNameMap = {
+  // from Piano Marvel JS
+  pingPlugin                        : 1,
+  startSession                      : 2,
+  getListDevices                    : 3,
+  userSelectDevice                  : 4,
+  checkSongMidiCache                : 5,
+  saveSongMidi                      : 6,
+  getCurrentDevice                  : 7,
+  preparePlayingData                : 9,
+  stopPlayMidi                      : 10,
+  playMidiSong                      : 12,
+  saveMidiDeviceKeySetting          : 14,
+  getLatency                        : 15,
+  getPluginInformation              : 17,
+  saveNotationData                  : 19,
+  getNotationData                   : 20,
+  userSaveEncryptionKey             : 21,
+  userGetEncryptionKey              : 22,
+  userSaveSpeakerOutput             : 23,
+  userStartSettingDevice            : 27,
+  userStopSettingDevice             : 28,
+  userGetDeviceKey                  : 29,
+  keepAlive                         : 31,
+  saveToken                         : 45,
+  startWaitForMeMode                : 46,
+  stopWaitForMeMode                 : 47,
+  getPianoKeysWaitForMeMode         : 48,
+  getPracticeMinutesByClientID      : 49,
+  savePracticeMinutesByClientID     : 50,
+  resetPracticeMinutesBySongID      : 51,
+  resetPracticeMinutesByClientID    : 52,
+  startSettingDeviceSingleConnection: 53,
+  stopSettingDeviceSingleConnection : 54
+} as const;

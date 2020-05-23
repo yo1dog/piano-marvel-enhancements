@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "lint": "npx tsc -p jsconfig.json --noEmit && npx eslint ."
+    "lint": "npx tsc -p app --noEmit && npx eslint app --ext .js,.ts && npx tsc -p build/jsconfig.json --noEmit && npx eslint build",
+    "build": "npx tsc -p app && ./build/createUserScript.bash integrated && ./build/createUserScript.bash external"
   },
   "repository": {
     "type": "git",
@@ -18,9 +18,11 @@
   "homepage": "https://github.com/yo1dog/piano-marvel-enhancements#readme",
   "devDependencies": {
     "@types/webmidi": "^2.0.4",
-    "@typescript-eslint/eslint-plugin": "^2.33.0",
-    "@typescript-eslint/parser": "^2.33.0",
-    "eslint": "^7.0.0",
-    "typescript": "^3.9.2"
+    "@typescript-eslint/eslint-plugin": "^2.34.0",
+    "@typescript-eslint/parser": "^2.34.0",
+    "eslint": "^7.0.0"
+  },
+  "dependencies": {
+    "typescript": "^3.9.3"
   }
 }

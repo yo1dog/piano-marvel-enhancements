@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "alwaysStrict": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "moduleResolution": "Node",
+    "module": "AMD",
+    "target": "ES2017",
+    "lib": ["ES2016", "DOM"],
+    "allowSyntheticDefaultImports": true,
+    "downlevelIteration": true,
+    "outFile": "../out/out.js"
+  },
+  "include": [
+    "./",
+    "../lib/"
+  ]
+}

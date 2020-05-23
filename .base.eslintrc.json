@@ -9,14 +9,7 @@
   ],
   "parserOptions": {
     "ecmaVersion": 2020,
-    "sourceType": "script",
-    "project": "jsconfig.json"
-  },
-  "env": {
-    "es6": true,
-    "node": false,
-    "browser": true,
-    "greasemonkey": true
+    "sourceType": "module"
   },
   "rules": {
     // --- JavaScript ---
@@ -144,6 +137,7 @@
     ],
     
     // --- Project Specific ---
-    "new-cap": ["error", {"capIsNewExceptions": ["JZZ"]}]
+    "new-cap": ["error", {"capIsNewExceptions": ["JZZ"]}],
+    "@typescript-eslint/no-explicit-any": "off"
   }
 }

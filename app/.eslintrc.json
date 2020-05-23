@@ -1,0 +1,15 @@
+{
+  "extends": ["../.base.eslintrc.json"],
+  "parserOptions": {
+    "sourceType": "module",
+    "project": "app/tsconfig.json"
+  },
+  "env": {
+    "es6": true,
+    "browser": true
+  },
+  "rules": {
+    // --- TypeScript Project ---
+    "@typescript-eslint/no-require-imports": "error"
+  }
+}
