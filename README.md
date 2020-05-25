@@ -20,7 +20,7 @@ One of the following browser plugins is required:
   - [Greasemonkey](https://addons.mozilla.org/en-US/firefox/addon/greasemonkey/)
   - [Tampermonkey](https://www.tampermonkey.net/)
 
-The external version will **likely** require the following Jazz plugins. If your browser supports the MIDI Access API, you may not. However, I strongly recommend installing them anyway for the best experience. If you insist, check bellow for hints on using the external version without installing plugins.
+The external version will **likely** require the following Jazz plugins. If your browser supports the MIDI Access API (Chrome, Edge), you may not. However, I strongly recommend installing them anyway for the best experience. If you insist, check bellow for hints on using the external version without installing these plugins.
   - [Jazz-Plugin](https://jazz-soft.net/download/Jazz-Plugin/)
   - [Jazz-MIDI](https://jazz-soft.net/download/#jazzmidi)
 
@@ -28,8 +28,8 @@ The external version will **likely** require the following Jazz plugins. If your
 ## Install
 
 Click to install one of:
-  - [pianoMarvelEnhancements.integrated.user.js](https://github.com/yo1dog/piano-marvel-enhancements/raw/master/bin/pianoMarvelEnhancements.integrated.user.js)
-  - [pianoMarvelEnhancements.external.user.js](https://github.com/yo1dog/piano-marvel-enhancements/raw/master/bin/pianoMarvelEnhancements.external.user.js)
+  - [Integrated](https://github.com/yo1dog/piano-marvel-enhancements/raw/master/bin/pianoMarvelEnhancements.integrated.user.js)
+  - [External](https://github.com/yo1dog/piano-marvel-enhancements/raw/master/bin/pianoMarvelEnhancements.external.user.js)
 
 
 ## Usage
