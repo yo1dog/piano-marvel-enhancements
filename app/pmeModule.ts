@@ -52,12 +52,12 @@ export class PMEModule {
     this.config = config;
     this.logger = logger;
     this.shortcuts = [
-      {name: 'Prepare', exec: () => this.doPrepare()},
-      {name: 'Assess',  exec: () => this.doAssess ()},
-      {name: 'Back',    exec: () => this.doBack   ()},
-      {name: 'Next',    exec: () => this.doNext   ()},
-      {name: 'Stop',    exec: () => this.doStop   ()},
-      {name: 'Restart', exec: () => this.doRestart()},
+      {name: 'Prepare',       exec: () => this.doPrepare       ()},
+      {name: 'Assess',        exec: () => this.doAssess        ()},
+      {name: 'Back',          exec: () => this.doBack          ()},
+      {name: 'Next',          exec: () => this.doNext          ()},
+      {name: 'Start/Stop',    exec: () => this.doStartOrStop   ()},
+      {name: 'Start/Restart', exec: () => this.doStartOrRestart()},
     ];
     
     // create and setup DOM
@@ -239,33 +239,36 @@ export class PMEModule {
   }
   
   public doBack() {
-    this.getAppState().backButton.click();
+    this.pressKey({key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37, charCode: 0});
   }
   public doNext() {
-    this.getAppState().nextButton.click();
+    this.pressKey({key: 'ArrowRight', code: 'ArrowRight', keyCode: 39, charCode: 0});
   }
   public doPrepare() {
-    this.getAppState().prepareButton.click();
+    this.pressKey({key: '1', code: 'Digit1', keyCode: 49, charCode: 0});
   }
   public doAssess() {
-    this.getAppState().assessButton.click();
+    this.pressKey({key: '2', code: 'Digit2', keyCode: 50, charCode: 0});
   }
-  public doStop() {
-    const {activeButton} = this.getAppState();
-    if (!activeButton) return;
-    
-    activeButton.click();
+  public doStartOrStop() {
+    this.pressKey({key: ' ', code: 'Space', keyCode: 32, charCode: 0});
   }
-  public async doRestart() {
-    const {activeButton} = this.getAppState();
-    if (!activeButton) return;
+  public doStartOrRestart(): Promise<void> | void {
+    const appState = this.getAppState();
+    const hadStarted = appState.isAssessing || appState.isPreparing;
     
-    activeButton.click();
-    await new Promise(resolve => setTimeout(resolve, this.config.restartClickDelayMs));
-    activeButton.click();
+    this.doStartOrStop();
+    if (hadStarted) {
+      return new Promise(resolve =>
+        setTimeout(() => {
+          this.doStartOrStop();
+          return resolve();
+        }, this.config.restartClickDelayMs)
+      );
+    }
   }
   
-  private getAppState() {
+  public getAppState() {
     const controlsContainer = document.getElementById('playerControlContainer');
     if (!controlsContainer) throw new Error(`Unable to find player control container.`);
     
@@ -295,6 +298,15 @@ export class PMEModule {
       isAssessing,
       activeButton
     };
+  }
+  
+  public pressKey(options: {
+    key     : string;
+    code    : string;
+    keyCode : number;
+    charCode: number;
+  }) {
+    document.dispatchEvent(new KeyboardEvent('keydown', options));
   }
   
   

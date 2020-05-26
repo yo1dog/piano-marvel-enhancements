@@ -50,14 +50,14 @@ To activate a shortcut, simply play the sequence of notes. Again, timing does no
 
 The following actions are supported:
 
-action  | effect
---------|-------
-Back    | Clicks the << button.
-Next    | Clicks the >> button.
-Prepare | Clicks the Prepare button.
-Assess  | Clicks the Assess button.
-Stop    | Clicks the Prepare or the Assess button if they are active.
-Restart | Clicks the Prepare or the Assess button if they are active, waits a few seconds, then clicks it again.
+action        | effect | equivalent
+--------------|--------|------------
+Back          | Goes back. | Pressing the left arrow key or clicking the << button.
+Next          | Goes forward. | Pressing the right arrow key or clicking the >> button.
+Prepare       | Starts or stops prepare mode. | Pressing the 1 key or clicking the Prepare button.
+Assess        | Starts or stops assess mode. | Pressing the 2 key or clicking the Assess button.
+Start/Stop    | Starts or stops the last used mode (prepare or assess). | Pressing the space key.
+Start/Restart | Starts or restarts the last used mode (prepare or assess). | Pressing the space key twice with a delay.
 
 
 ## Issues / Debugging

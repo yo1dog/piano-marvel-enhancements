@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          Piano Marvel Enhancements
 // @namespace     http://yo1.dog
-// @version       4.0.0
+// @version       4.1.0
 // @description   Adds enhancements to painomarvel.com (@@@APP_TYPE@@@)
 // @author        Mike "yo1dog" Moore
 // @homepageURL   https://github.com/yo1dog/piano-marvel-enhancements#readme

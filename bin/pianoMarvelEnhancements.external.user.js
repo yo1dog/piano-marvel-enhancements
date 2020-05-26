@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          Piano Marvel Enhancements
 // @namespace     http://yo1.dog
-// @version       4.0.0
+// @version       4.1.0
 // @description   Adds enhancements to painomarvel.com (external)
 // @author        Mike "yo1dog" Moore
 // @homepageURL   https://github.com/yo1dog/piano-marvel-enhancements#readme
@@ -206,8 +206,8 @@ define("pmeModule", ["require", "exports", "utils"], function (require, exports,
                 { name: 'Assess', exec: () => this.doAssess() },
                 { name: 'Back', exec: () => this.doBack() },
                 { name: 'Next', exec: () => this.doNext() },
-                { name: 'Stop', exec: () => this.doStop() },
-                { name: 'Restart', exec: () => this.doRestart() },
+                { name: 'Start/Stop', exec: () => this.doStartOrStop() },
+                { name: 'Start/Restart', exec: () => this.doStartOrRestart() },
             ];
             // create and setup DOM
             const fragment = utils_1.createHTML(`
@@ -360,30 +360,30 @@ define("pmeModule", ["require", "exports", "utils"], function (require, exports,
                 .catch(err => this.logger.error(err));
         }
         doBack() {
-            this.getAppState().backButton.click();
+            this.pressKey({ key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37, charCode: 0 });
         }
         doNext() {
-            this.getAppState().nextButton.click();
+            this.pressKey({ key: 'ArrowRight', code: 'ArrowRight', keyCode: 39, charCode: 0 });
         }
         doPrepare() {
-            this.getAppState().prepareButton.click();
+            this.pressKey({ key: '1', code: 'Digit1', keyCode: 49, charCode: 0 });
         }
         doAssess() {
-            this.getAppState().assessButton.click();
+            this.pressKey({ key: '2', code: 'Digit2', keyCode: 50, charCode: 0 });
         }
-        doStop() {
-            const { activeButton } = this.getAppState();
-            if (!activeButton)
-                return;
-            activeButton.click();
+        doStartOrStop() {
+            this.pressKey({ key: ' ', code: 'Space', keyCode: 32, charCode: 0 });
         }
-        async doRestart() {
-            const { activeButton } = this.getAppState();
-            if (!activeButton)
-                return;
-            activeButton.click();
-            await new Promise(resolve => setTimeout(resolve, this.config.restartClickDelayMs));
-            activeButton.click();
+        doStartOrRestart() {
+            const appState = this.getAppState();
+            const hadStarted = appState.isAssessing || appState.isPreparing;
+            this.doStartOrStop();
+            if (hadStarted) {
+                return new Promise(resolve => setTimeout(() => {
+                    this.doStartOrStop();
+                    return resolve();
+                }, this.config.restartClickDelayMs));
+            }
         }
         getAppState() {
             const controlsContainer = document.getElementById('playerControlContainer');
@@ -416,6 +416,9 @@ define("pmeModule", ["require", "exports", "utils"], function (require, exports,
                 isAssessing,
                 activeButton
             };
+        }
+        pressKey(options) {
+            document.dispatchEvent(new KeyboardEvent('keydown', options));
         }
         // ----------------------
         // Recording
